@@ -6,7 +6,7 @@ import { send, type Client } from './room';
 import { Rooms } from './rooms';
 
 /**
- * VANGUARDA realtime game server: one long-running Node process hosting the
+ * BALUARTE realtime game server: one long-running Node process hosting the
  * authoritative co-op simulations. HTTP is only /healthz; everything else is
  * WebSocket. Deployed on Railway next to the Postgres.
  */
@@ -204,5 +204,5 @@ setInterval(() => {
 }, 30_000).unref();
 
 http.listen(PORT, () => {
-  console.log(`[vanguarda-rt] listening on :${PORT}`);
+  console.log(`[baluarte-rt] listening on :${PORT}`);
 });

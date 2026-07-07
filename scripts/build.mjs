@@ -50,7 +50,7 @@ if (serve) {
     host: '127.0.0.1',
     port: Number(process.env.PORT ?? 8137),
   });
-  console.log(`\n  VANGUARDA rodando em  http://127.0.0.1:${port}\n`);
+  console.log(`\n  BALUARTE rodando em  http://127.0.0.1:${port}\n`);
 } else {
   await esbuild.build(options);
   console.log('Build finalizado em dist/');

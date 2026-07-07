@@ -73,7 +73,7 @@ const coopMenuOpts = {
   onJoin: (code: string) => void coopConnect((sock) => sock.send({ t: 'join', code })),
   onBack: () => {
     coopCleanup();
-    ui.showMenu();
+    ui.showModeSelect();
   },
 };
 

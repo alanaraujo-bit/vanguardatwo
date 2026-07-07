@@ -1,7 +1,7 @@
 {
-  "name": "vanguarda",
+  "name": "baluarte",
   "version": "1.1.0",
-  "description": "VANGUARDA — arena survival roguelite premium para navegador (mobile-first, PWA, sem engine)",
+  "description": "BALUARTE — arena survival roguelite premium para navegador (mobile-first, PWA, sem engine)",
   "private": true,
   "type": "module",
   "scripts": {

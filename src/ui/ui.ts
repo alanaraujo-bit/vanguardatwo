@@ -4,7 +4,9 @@ import type { AudioEngine } from '../audio/audio';
 import { S } from '../i18n/strings';
 import { CODEX, CODEX_INTRO, type CodexCategoryId, type CodexEntry } from '../game/codex';
 import { META_DEFS, metaCost, metaLevel } from '../game/meta';
+import { SHIP_SHAPE } from '../game/player';
 import { paintIcon, type UpgradeDef } from '../game/upgrades';
+import { drawSprite, shapeSprite } from '../fx/sprites';
 import { api, ApiError } from '../net/api';
 import { nameError, sanitizeName, NAME_MAX } from '../net/names';
 import type { BoardKind, LeaderboardEntry, ProfileResponse } from '../net/protocol';
@@ -61,6 +63,12 @@ interface LoginOpts {
   onSkip?: () => void;
 }
 
+/** Inline line-icons for the menu's compact quick-action row (viewBox 0 0 24 24). */
+const ICON_HANGAR = '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>';
+const ICON_TROPHY = '<path d="M7 4h10v4a5 5 0 0 1-10 0V4z"/><path d="M7 5H4.5A2.5 2.5 0 0 0 7 7.5"/><path d="M17 5h2.5A2.5 2.5 0 0 1 17 7.5"/><path d="M12 13v4"/><path d="M9 20h6"/>';
+const ICON_BOOK = '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>';
+const ICON_GEAR = '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>';
+
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K, cls?: string, text?: string,
 ): HTMLElementTagNameMap[K] {
@@ -106,6 +114,16 @@ export class UI {
     return b;
   }
 
+  /** Compact icon-over-label button for the menu's secondary-actions row. */
+  private quickBtn(iconSvg: string, label: string, onTap: () => void): HTMLButtonElement {
+    const b = el('button', 'quickbtn');
+    b.innerHTML = `<svg class="quickbtn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${iconSvg}</svg>`;
+    b.appendChild(el('span', 'quickbtn-label', label));
+    b.addEventListener('pointerdown', () => this.audio.play('tap'));
+    b.addEventListener('click', onTap);
+    return b;
+  }
+
   private screen(name: string): HTMLElement {
     let s = this.screens.get(name);
     if (!s) {
@@ -137,6 +155,25 @@ export class UI {
   /** Re-render the main menu if it is what's on screen (login state changed). */
   refreshMenu(): void {
     if (this.current === 'menu') this.showMenu();
+  }
+
+  /** Paints one or two of the player's actual ship sprite into an icon canvas — used on the mode-select cards. */
+  private shipIcon(size: number, colors: string[]): HTMLCanvasElement {
+    const canvas = document.createElement('canvas');
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = canvas.height = size * dpr;
+    canvas.style.width = canvas.style.height = `${size}px`;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return canvas;
+    ctx.scale(dpr, dpr);
+    const solo = colors.length === 1;
+    colors.forEach((color, i) => {
+      const sprite = shapeSprite({ ...SHIP_SHAPE, color });
+      const scale = (size * (solo ? 0.36 : 0.24)) / sprite.half;
+      const offset = solo ? 0 : (i - (colors.length - 1) / 2) * size * 0.34;
+      drawSprite(ctx, sprite, size / 2 + offset, size / 2, 0, scale);
+    });
+    return canvas;
   }
 
   private coinChip(value: number): HTMLElement {
@@ -202,20 +239,80 @@ export class UI {
     const col = el('div', 'col actions');
     col.appendChild(this.btn(S.play, 'primary big pulse', () => {
       this.audio.play('confirm');
-      this.actions.startRun();
+      this.showModeSelect();
     }));
-    col.appendChild(this.btn(S.coop, 'ghost coop-btn', () => {
-      this.audio.play('confirm');
-      this.actions.startCoop();
-    }));
-    col.appendChild(this.btn(S.upgrades, 'ghost', () => this.showShop()));
-    col.appendChild(this.btn(S.ranking, 'ghost', () => this.showLeaderboard()));
-    col.appendChild(this.btn(S.codex, 'ghost', () => this.showCodex()));
-    col.appendChild(this.btn(S.settings, 'ghost', () => this.showSettings()));
     s.appendChild(col);
+
+    const quick = el('div', 'quickrow');
+    quick.appendChild(this.quickBtn(ICON_HANGAR, S.upgrades, () => this.showShop()));
+    quick.appendChild(this.quickBtn(ICON_TROPHY, S.ranking, () => this.showLeaderboard()));
+    quick.appendChild(this.quickBtn(ICON_BOOK, S.codex, () => this.showCodex()));
+    quick.appendChild(this.quickBtn(ICON_GEAR, S.settings, () => this.showSettings()));
+    s.appendChild(quick);
 
     s.appendChild(el('div', 'version', S.version));
     this.open('menu');
+  }
+
+  // ————— mode select —————
+
+  showModeSelect(): void {
+    this.hideAll();
+    const s = this.screen('modeselect');
+
+    const header = el('div', 'row header');
+    header.appendChild(this.btn(`‹ ${S.back}`, 'ghost small', () => this.showMenu()));
+    s.appendChild(header);
+
+    s.appendChild(el('div', 'spacer'));
+    s.appendChild(el('h2', 'heading', S.chooseMode));
+    s.appendChild(el('div', 'subheading', S.chooseModeSub));
+
+    const modes: { icon: HTMLCanvasElement; accent: string; title: string; desc: string; onSelect(): void }[] = [
+      {
+        icon: this.shipIcon(44, ['#35f0ff']),
+        accent: 'var(--cyan)',
+        title: S.modeSoloTitle,
+        desc: S.modeSoloDesc,
+        onSelect: () => this.actions.startRun(),
+      },
+      {
+        icon: this.shipIcon(44, ['#35f0ff', '#ff2e8a']),
+        accent: 'var(--magenta)',
+        title: S.modeCoopTitle,
+        desc: S.modeCoopDesc,
+        onSelect: () => this.actions.startCoop(),
+      },
+    ];
+
+    const list = el('div', 'col cards mode-list');
+    modes.forEach((m, i) => {
+      const card = el('button', 'card mode-card');
+      card.style.setProperty('--i', String(i));
+      card.style.setProperty('--accent', m.accent);
+
+      const icon = el('div', 'icon-wrap');
+      icon.appendChild(m.icon);
+      card.appendChild(icon);
+
+      const body = el('div', 'grow');
+      body.appendChild(el('div', 'item-name', m.title));
+      body.appendChild(el('div', 'item-desc', m.desc));
+      card.appendChild(body);
+
+      card.appendChild(el('span', 'mode-chevron', '›'));
+
+      card.addEventListener('pointerdown', () => this.audio.play('tap'));
+      card.addEventListener('click', () => {
+        this.audio.play('confirm');
+        m.onSelect();
+      });
+      list.appendChild(card);
+    });
+    s.appendChild(list);
+
+    s.appendChild(el('div', 'spacer'));
+    this.open('modeselect');
   }
 
   // ————— shop (hangar) —————

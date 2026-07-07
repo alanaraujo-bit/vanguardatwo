@@ -1,4 +1,4 @@
-# VANGUARDA realtime game server (co-op) — deploy na Railway.
+# BALUARTE realtime game server (co-op) — deploy na Railway.
 # O bundle esbuild embute todo o código (src/game + server); só `pg` e `ws`
 # ficam como deps de runtime dentro do bundle... na prática o bundle embute
 # tudo que é JS puro; `pg` também é embutido (pg-native fica external e nunca

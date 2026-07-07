@@ -1,10 +1,10 @@
-# VANGUARDA — Resista à Ruína
+# BALUARTE — Resista à Ruína
 
 Arena survival roguelite premium para navegador, mobile-first, construído inteiramente do zero — sem engine, sem frameworks, sem assets externos. HTML5 + CSS3 + TypeScript + Canvas 2D + Web Audio, empacotado como PWA offline.
 
 ## O jogo
 
-Você é a Vanguarda: a última linha de defesa contra a Ruína, um enxame geométrico corrompido. Arraste o polegar para mover — o ataque é automático. Colete fragmentos, suba de nível e escolha melhorias aleatórias durante a partida. A cada cinco ondas, um Colosso aparece. Ao morrer, as moedas coletadas ficam com você e podem ser gastas no **Hangar** em melhorias permanentes.
+Você é o Baluarte: a última linha de defesa contra a Ruína, um enxame geométrico corrompido. Arraste o polegar para mover — o ataque é automático. Colete fragmentos, suba de nível e escolha melhorias aleatórias durante a partida. A cada cinco ondas, um Colosso aparece. Ao morrer, as moedas coletadas ficam com você e podem ser gastas no **Hangar** em melhorias permanentes.
 
 - Sessões de 2–5 minutos, dificuldade crescente por ondas
 - 13 melhorias de partida (perfurante, ricochete, lâminas orbitais, pulso nova, fragmentação...)

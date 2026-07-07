@@ -9,7 +9,7 @@ import { paintIcon, UPGRADE_DEFS } from './upgrades';
 
 /**
  * The in-game Codex: a read-only reference of everything that exists in
- * Vanguarda, built from the same data tables the systems run on (so numbers
+ * Baluarte, built from the same data tables the systems run on (so numbers
  * can't drift) plus hand-written lore/tactics text.
  *
  * Whenever a new enemy, upgrade, meta upgrade or resource is added to the
@@ -477,7 +477,7 @@ const systemEntries: CodexEntry[] = [
 
 // ————— índice —————
 
-export const CODEX_INTRO = 'Referência completa de tudo que existe em Vanguarda: nave, ameaças, poderes e recursos.';
+export const CODEX_INTRO = 'Referência completa de tudo que existe no Baluarte: nave, ameaças, poderes e recursos.';
 
 export const CODEX: readonly CodexCategory[] = [
   { id: 'ship', label: 'Nave', intro: 'A única unidade ainda em campo contra a Ruína.', entries: [shipEntry] },

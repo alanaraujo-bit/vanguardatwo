@@ -1,4 +1,4 @@
--- VANGUARDA — player accounts, cloud saves and leaderboard.
+-- BALUARTE — player accounts, cloud saves and leaderboard.
 -- Apply with: node scripts/db-apply.mjs   (reads DATABASE_URL from .env)
 -- Idempotent: safe to re-run.
 

@@ -1,9 +1,9 @@
 ---
 name: verify
-description: Build, launch and drive VANGUARDA (canvas arena roguelite) to verify gameplay changes end-to-end in a headless browser.
+description: Build, launch and drive BALUARTE (canvas arena roguelite) to verify gameplay changes end-to-end in a headless browser.
 ---
 
-# Verifying VANGUARDA
+# Verifying BALUARTE
 
 ## Launch
 

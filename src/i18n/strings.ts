@@ -1,8 +1,14 @@
 /** All player-facing copy, in Brazilian Portuguese. */
 export const S = {
-  title: 'VANGUARDA',
+  title: 'BALUARTE',
   tagline: 'Resista à Ruína',
   play: 'JOGAR',
+  chooseMode: 'ESCOLHA SEU MODO',
+  chooseModeSub: 'Mais modos de jogo chegando em breve.',
+  modeSoloTitle: 'MODO SOLO',
+  modeSoloDesc: 'Você contra a Ruína. Sobreviva sozinho, onda após onda.',
+  modeCoopTitle: 'CO-OP',
+  modeCoopDesc: 'Uma sala, dois pilotos. Enfrentem a Ruína juntos.',
   upgrades: 'MELHORIAS',
   codex: 'CÓDEX',
   settings: 'AJUSTES',
@@ -39,7 +45,7 @@ export const S = {
   shopSub: 'Melhorias permanentes entre partidas',
   runs: 'Partidas',
   totalKills: 'Abates totais',
-  version: 'v1.1 · Estúdio Vanguarda',
+  version: 'v1.1 · Estúdio Baluarte',
 
   // ————— tutorial guiado —————
   tutSkip: 'PULAR TUTORIAL',
@@ -50,7 +56,7 @@ export const S = {
   tutReviveSub: 'No combate real, isso teria sido o fim',
   tutDoneBanner: 'TREINAMENTO CONCLUÍDO',
   tutDoneSub: 'Bônus de 25 moedas creditado',
-  tutWelcomeTitle: 'Bem-vindo à VANGUARDA, piloto.',
+  tutWelcomeTitle: 'Bem-vindo ao BALUARTE, piloto.',
   tutWelcomeSub: 'Vamos direto ao treinamento básico.',
   tutMoveTitle: 'Arraste em qualquer lugar da tela para mover.',
   tutMoveSub: 'No teclado: WASD ou setas.',
@@ -129,7 +135,6 @@ export const S = {
   retry: 'TENTAR DE NOVO',
 
   // ————— co-op —————
-  coop: 'CO-OP',
   coopTitle: 'OPERAÇÃO EM DUPLA',
   coopSub: 'Crie uma sala e mande o código pro seu parceiro, ou entre com o código dele.',
   coopCreate: 'CRIAR SALA',
