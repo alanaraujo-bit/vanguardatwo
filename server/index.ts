@@ -65,9 +65,12 @@ wss.on('connection', (ws: WebSocket, req) => {
   };
 
   sessions.add(client);
+  // Generous window: the client sends hello right after connecting (no more
+  // async work in between as of the coopConnect reorder), but mobile
+  // networks and TLS handshakes on a fresh connection can still be slow.
   const helloTimeout = setTimeout(() => {
     if (!client.helloDone) ws.close(4000, 'hello timeout');
-  }, 5000);
+  }, 10_000);
 
   ws.on('pong', () => {
     client.alive = true;

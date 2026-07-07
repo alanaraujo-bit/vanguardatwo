@@ -78,14 +78,11 @@ const coopMenuOpts = {
 async function coopConnect(after: (sock: CoopSocket) => void): Promise<void> {
   coopCleanup();
   ui.coopStatus(S.coopConnecting);
-  const sock = new CoopSocket();
-  try {
-    await sock.connect(__WS_URL__);
-  } catch {
-    ui.coopStatus(S.coopOffline);
-    return;
-  }
-  // Logged-in pilots authenticate the socket; guests just introduce themselves.
+  // Fetch the auth token BEFORE opening the socket: the server closes the
+  // connection if 'hello' doesn't arrive within a few seconds of connecting,
+  // and this HTTP round-trip (Vercel function, can cold-start) must not eat
+  // into that budget — otherwise logged-in pilots on slow networks get
+  // disconnected before they ever get to send hello. Guests skip this call.
   let token: string | null = null;
   if (session.authed) {
     try {
@@ -93,6 +90,13 @@ async function coopConnect(after: (sock: CoopSocket) => void): Promise<void> {
     } catch {
       token = null;
     }
+  }
+  const sock = new CoopSocket();
+  try {
+    await sock.connect(__WS_URL__);
+  } catch {
+    ui.coopStatus(S.coopOffline);
+    return;
   }
   sock.hello(save.data.name || 'PILOTO', token, save.data.meta);
   coopSocket = sock;
