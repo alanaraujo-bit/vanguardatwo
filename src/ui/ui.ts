@@ -8,6 +8,7 @@ import { paintIcon, type UpgradeDef } from '../game/upgrades';
 import { api, ApiError } from '../net/api';
 import { nameError, sanitizeName, NAME_MAX } from '../net/names';
 import type { BoardKind, LeaderboardEntry, ProfileResponse } from '../net/protocol';
+import { normalizeRoomCode, ROOM_CODE_LEN, type EndResult, type RoomPlayer } from '../net/realtime';
 import { session } from '../net/session';
 
 export interface RunStats {
@@ -22,11 +23,29 @@ export interface RunStats {
 export interface UiActions {
   startRun(): void;
   startTutorial(): void;
+  startCoop(): void;
   pauseRun(): void;
   resumeRun(): void;
   restartRun(): void;
   quitToMenu(): void;
   applySettings(): void;
+}
+
+export interface CoopMenuOpts {
+  onCreate(): void;
+  onJoin(code: string): void;
+  onBack(): void;
+}
+
+export interface CoopLobbyView {
+  code: string;
+  players: RoomPlayer[];
+  hostSlot: number;
+  localSlot: number;
+  ready: boolean;
+  onReady(ready: boolean): void;
+  onStart(): void;
+  onLeave(): void;
 }
 
 interface NamePromptOpts {
@@ -184,6 +203,10 @@ export class UI {
     col.appendChild(this.btn(S.play, 'primary big pulse', () => {
       this.audio.play('confirm');
       this.actions.startRun();
+    }));
+    col.appendChild(this.btn(S.coop, 'ghost coop-btn', () => {
+      this.audio.play('confirm');
+      this.actions.startCoop();
     }));
     col.appendChild(this.btn(S.upgrades, 'ghost', () => this.showShop()));
     col.appendChild(this.btn(S.ranking, 'ghost', () => this.showLeaderboard()));
@@ -506,6 +529,225 @@ export class UI {
     });
     s.appendChild(cards);
     this.open('levelup');
+  }
+
+  // ————— co-op: menu, lobby, level-up não-bloqueante, relatório —————
+
+  showCoopMenu(opts: CoopMenuOpts): void {
+    this.hideAll();
+    const s = this.screen('coopmenu');
+
+    const header = el('div', 'row header');
+    header.appendChild(this.btn(`‹ ${S.back}`, 'ghost small', opts.onBack));
+    s.appendChild(header);
+
+    s.appendChild(el('div', 'spacer'));
+    s.appendChild(el('h2', 'heading glow', S.coopTitle));
+    s.appendChild(el('div', 'subheading', S.coopSub));
+
+    const col = el('div', 'col actions coop-actions');
+    col.appendChild(this.btn(S.coopCreate, 'primary big', () => {
+      this.audio.play('confirm');
+      opts.onCreate();
+    }));
+
+    const joinRow = el('div', 'row gap coop-join-row');
+    const input = el('input', 'input coop-code');
+    input.type = 'text';
+    input.maxLength = ROOM_CODE_LEN;
+    input.placeholder = S.coopCodePlaceholder;
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.addEventListener('input', () => {
+      input.value = normalizeRoomCode(input.value);
+    });
+    const join = this.btn(S.coopJoin, 'primary', () => {
+      if (input.value.length === ROOM_CODE_LEN) opts.onJoin(input.value);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && input.value.length === ROOM_CODE_LEN) opts.onJoin(input.value);
+    });
+    joinRow.appendChild(input);
+    joinRow.appendChild(join);
+    col.appendChild(joinRow);
+    s.appendChild(col);
+
+    const status = el('div', 'subheading coop-status');
+    s.appendChild(status);
+    s.appendChild(el('div', 'spacer'));
+    this.open('coopmenu');
+  }
+
+  /** Update the status line on the co-op menu (connecting / errors). */
+  coopStatus(text: string): void {
+    const s = this.screens.get('coopmenu');
+    const status = s?.querySelector('.coop-status');
+    if (status) status.textContent = text;
+  }
+
+  showCoopLobby(view: CoopLobbyView): void {
+    this.hideAll();
+    const s = this.screen('cooplobby');
+
+    const header = el('div', 'row header');
+    header.appendChild(this.btn(`‹ ${S.back}`, 'ghost small', view.onLeave));
+    s.appendChild(header);
+
+    s.appendChild(el('div', 'spacer'));
+    s.appendChild(el('h2', 'heading', S.coopLobbyTitle));
+
+    const codeBox = el('div', 'panel coop-code-panel');
+    codeBox.appendChild(el('div', 'subheading', S.coopLobbyShare));
+    codeBox.appendChild(el('div', 'coop-code-big', view.code));
+    s.appendChild(codeBox);
+
+    const list = el('div', 'col list narrow coop-slots');
+    for (let slot = 0; slot < 2; slot++) {
+      const p = view.players.find((x) => x.slot === slot);
+      const row = el('div', `panel coop-slot${p ? '' : ' empty'}`);
+      if (p) {
+        row.appendChild(el('span', 'item-name grow', p.name));
+        const tags = el('span', 'coop-tags');
+        if (slot === view.localSlot) tags.appendChild(el('span', 'chip small', S.coopSlotYou));
+        if (slot === view.hostSlot) tags.appendChild(el('span', 'chip small', S.coopSlotHost));
+        if (p.ready && slot !== view.hostSlot) tags.appendChild(el('span', 'chip small ready', S.coopReady));
+        row.appendChild(tags);
+      } else {
+        row.appendChild(el('span', 'item-desc grow', S.coopWaitingPartner));
+      }
+      list.appendChild(row);
+    }
+    s.appendChild(list);
+
+    const col = el('div', 'col actions');
+    const isHost = view.localSlot === view.hostSlot;
+    if (isHost) {
+      const others = view.players.filter((p) => p.slot !== view.hostSlot);
+      const allReady = others.every((p) => p.ready);
+      const start = this.btn(S.coopStart, `primary big${allReady ? '' : ' locked'}`, () => {
+        if (allReady) view.onStart();
+      });
+      col.appendChild(start);
+      if (others.length === 0) col.appendChild(el('div', 'subheading', S.coopWaitingPartner));
+    } else {
+      col.appendChild(this.btn(view.ready ? S.coopUnready : S.coopReady, view.ready ? 'ghost' : 'primary big', () => {
+        view.onReady(!view.ready);
+      }));
+      col.appendChild(el('div', 'subheading', S.coopWaitingHost));
+    }
+    s.appendChild(col);
+    s.appendChild(el('div', 'spacer'));
+    this.open('cooplobby');
+  }
+
+  private coopLevelUpTimer: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * Non-blocking level-up sheet: the match keeps running behind it. If the
+   * pilot dawdles past the server deadline, the first option is auto-picked
+   * (matching the server's own timeout behavior).
+   */
+  showLevelUpCoop(
+    choices: UpgradeDef[],
+    levelOf: (id: string) => number,
+    seconds: number,
+    onPick: (def: UpgradeDef) => void,
+  ): void {
+    this.hideLevelUpCoop();
+    const s = this.screen('levelupcoop');
+    s.appendChild(el('div', 'grow'));
+
+    const sheet = el('div', 'coop-sheet');
+    sheet.appendChild(el('div', 'coop-sheet-title', S.coopChooseUpgrade));
+
+    const timerBar = el('div', 'coop-timer');
+    const timerFill = el('div', 'coop-timer-fill');
+    timerBar.appendChild(timerFill);
+    sheet.appendChild(timerBar);
+
+    const pick = (def: UpgradeDef): void => {
+      this.hideLevelUpCoop();
+      onPick(def);
+    };
+
+    const cards = el('div', 'row coop-cards');
+    for (const def of choices) {
+      const lvl = levelOf(def.id);
+      const card = el('button', 'card coop-card');
+      card.style.setProperty('--accent', def.color);
+      const icon = el('div', 'icon-wrap');
+      icon.appendChild(paintIcon(def.icon, def.color, 34));
+      card.appendChild(icon);
+      const body = el('div', 'grow');
+      body.appendChild(el('div', 'item-name', def.name));
+      body.appendChild(this.pips(lvl, def.max, true));
+      body.appendChild(el('div', 'item-desc', def.desc(lvl + 1)));
+      card.appendChild(body);
+      card.addEventListener('pointerdown', () => this.audio.play('tap'));
+      card.addEventListener('click', () => pick(def), { once: true });
+      cards.appendChild(card);
+    }
+    sheet.appendChild(cards);
+    s.appendChild(sheet);
+
+    const deadline = performance.now() + seconds * 1000;
+    this.coopLevelUpTimer = setInterval(() => {
+      const left = deadline - performance.now();
+      timerFill.style.width = `${Math.max(0, (left / (seconds * 1000)) * 100)}%`;
+      if (left <= 0) pick(choices[0]);
+    }, 100);
+
+    this.open('levelupcoop');
+  }
+
+  hideLevelUpCoop(): void {
+    if (this.coopLevelUpTimer) clearInterval(this.coopLevelUpTimer);
+    this.coopLevelUpTimer = null;
+    this.close('levelupcoop');
+  }
+
+  showCoopGameOver(results: EndResult[], localSlot: number, onMenu: () => void): void {
+    this.hideGameOverlay();
+    this.hideLevelUpCoop();
+    const s = this.screen('gameover');
+    s.appendChild(el('h2', 'heading gameover-title', S.coopEndTitle));
+
+    const mine = results.find((r) => r.slot === localSlot);
+    const pot = results.reduce((sum, r) => sum + r.coinsEarned, 0);
+
+    for (const r of results.slice().sort((a, b) => a.slot - b.slot)) {
+      const panel = el('div', 'panel results coop-result');
+      const title = el('div', 'row result-row');
+      title.appendChild(el('span', 'grow item-name', r.slot === localSlot ? `${r.name} · ${S.coopSlotYou}` : r.name));
+      panel.appendChild(title);
+      const addRow = (label: string, value: string): void => {
+        const row = el('div', 'row result-row');
+        row.appendChild(el('span', 'grow item-desc', label));
+        row.appendChild(el('span', 'result-value', value));
+        panel.appendChild(row);
+      };
+      addRow(S.score, String(r.score));
+      addRow(S.kills, String(r.kills));
+      s.appendChild(panel);
+    }
+
+    const shared = el('div', 'panel results');
+    const potRow = el('div', 'row result-row');
+    potRow.appendChild(el('span', 'grow item-desc', `${S.waveReached}: ${results[0]?.wave ?? 1} · ${S.timeSurvived}: ${fmtTime(results[0]?.time ?? 0)}`));
+    shared.appendChild(potRow);
+    const coinsRow = el('div', 'row result-row coins-row');
+    coinsRow.appendChild(el('span', 'grow item-desc', `${S.coopPot}: ${pot} · ${S.coopYourShare}`));
+    coinsRow.appendChild(el('span', 'coin-dot'));
+    const coinsEl = el('span', 'result-value amber', '0');
+    coinsRow.appendChild(coinsEl);
+    shared.appendChild(coinsRow);
+    this.countUp(coinsEl, mine?.coinsEarned ?? 0, 1.2, '+');
+    s.appendChild(shared);
+
+    const col = el('div', 'col actions');
+    col.appendChild(this.btn(S.menu, 'primary', onMenu));
+    s.appendChild(col);
+    this.open('gameover');
   }
 
   // ————— game over —————

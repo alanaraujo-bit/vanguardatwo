@@ -1,7 +1,7 @@
 import type { Game, Scene } from '../core/game';
 import type { Input } from '../core/input';
 import type { SaveSystem } from '../core/save';
-import { damp, rand, randomId } from '../core/utils';
+import { damp, dist2, rand, randomId } from '../core/utils';
 import type { AudioEngine } from '../audio/audio';
 import type { Music } from '../audio/music';
 import { Background } from '../fx/background';
@@ -18,7 +18,7 @@ import { S } from '../i18n/strings';
 import type { RunSubmission } from '../net/protocol';
 import { SECTORS, sectorForWave } from './sectors';
 import { TutorialDirector, type TutorialHooks } from './tutorial';
-import { computeStats, rollChoices, type Stats } from './upgrades';
+import { computeStats, rollChoices } from './upgrades';
 import { WaveDirector, type Director } from './waves';
 import { Nova, Orbitals } from './weapons';
 import type { World } from './world';
@@ -42,9 +42,7 @@ export class GameScene implements Scene, World {
   // — World contract —
   time = 0;
   runTime = 0;
-  stats: Stats;
-  input: Input;
-  player: Player;
+  players: Player[];
   enemies = new Enemies();
   playerShots = new PlayerShots();
   enemyShots = new EnemyShots();
@@ -52,6 +50,10 @@ export class GameScene implements Scene, World {
   particles = new Particles();
   floaters = new Floaters();
   audio: AudioEngine;
+
+  // — solo-run plumbing (not part of the World contract) —
+  readonly player: Player;
+  private readonly input: Input;
 
   state: RunState = 'playing';
 
@@ -87,8 +89,8 @@ export class GameScene implements Scene, World {
   constructor(private readonly deps: GameDeps) {
     this.audio = deps.audio;
     this.input = deps.game.input;
-    this.stats = computeStats(deps.save.data, this.lv);
-    this.player = new Player(this.stats);
+    this.player = new Player(computeStats(deps.save.data, this.lv));
+    this.players = [this.player];
     this.particles.quality = deps.save.data.settings.lowFx ? 0.45 : 1;
     this.deathDot = glowDot(10, '#9ff2ff');
     if (deps.tutorial) {
@@ -181,13 +183,18 @@ export class GameScene implements Scene, World {
     this.gemStreakT -= dt;
     if (this.gemStreakT <= 0) this.gemStreak = 0;
 
+    // The sim only ever sees intents; the joystick stops here.
+    const mv = this.input.sample();
+    this.player.intent.mx = mv.mx;
+    this.player.intent.my = mv.my;
+
     this.player.update(dt, this);
     this.waves.update(dt, this);
     this.enemies.update(dt, this);
     this.playerShots.update(dt, this);
     this.enemyShots.update(dt, this);
-    this.orbitals.update(dt, this);
-    this.nova.update(dt, this);
+    this.orbitals.update(dt, this, this.player);
+    this.nova.update(dt, this, this.player);
     this.pickups.update(dt, this);
     this.particles.update(dt);
     this.floaters.update(dt);
@@ -214,6 +221,20 @@ export class GameScene implements Scene, World {
   }
 
   // — World callbacks —
+
+  nearestPlayer(x: number, y: number): Player | null {
+    let best: Player | null = null;
+    let bestD = Infinity;
+    for (const p of this.players) {
+      if (p.dead) continue;
+      const d = dist2(x, y, p.x, p.y);
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    return best;
+  }
 
   /** Random point on the edge of an expanded screen rectangle (world coords). */
   randomSpawnPos(): [number, number] {
@@ -246,15 +267,15 @@ export class GameScene implements Scene, World {
     this.deps.game.hitStop(seconds, scale);
   }
 
-  onEnemyKilled(e: Enemy): void {
+  onEnemyKilled(e: Enemy, killer: Player | null): void {
     this.kills++;
     this.killScore += e.score;
     this.combo++;
     this.comboT = BAL.combo.window;
     this.tutorialDir?.noteKill();
-    const frag = this.stats.fragLevel;
-    if (frag > 0) {
-      this.enemies.queueAoe(e.x, e.y, 52 + 16 * frag, this.stats.damage * 0.35 * frag);
+    const frag = killer ? killer.stats.fragLevel : 0;
+    if (killer && frag > 0) {
+      this.enemies.queueAoe(e.x, e.y, 52 + 16 * frag, killer.stats.damage * 0.35 * frag, killer);
     }
   }
 
@@ -266,38 +287,38 @@ export class GameScene implements Scene, World {
     this.deps.ui.banner(boss.defeatTitle, boss.defeatSub);
   }
 
-  onGemCollected(value: number): void {
+  onGemCollected(value: number, collector: Player): void {
     this.gemStreak++;
     this.gemStreakT = 0.9;
     this.tutorialDir?.noteGem();
     this.audio.play('gem', Math.pow(2, Math.min(this.gemStreak, 12) * 0.08));
     const mult = 1 + Math.min(this.combo, BAL.combo.maxStack) * BAL.combo.xpPerStack;
-    this.player.addXp(value * mult);
+    collector.addXp(value * mult);
   }
 
-  onCoinCollected(value: number): void {
-    const gained = Math.max(1, Math.round(value * this.stats.coinMult));
+  onCoinCollected(value: number, collector: Player): void {
+    const gained = Math.max(1, Math.round(value * collector.stats.coinMult));
     this.coinsRun += gained;
     this.audio.play('coin');
     this.tutorialDir?.noteCoin();
-    this.floaters.spawn(this.player.x, this.player.y - 26, `+${gained}`, {
+    this.floaters.spawn(collector.x, collector.y - 26, `+${gained}`, {
       color: '#ffc857', size: 13, bold: true,
     });
   }
 
-  onPlayerDeath(): void {
+  onPlayerDeath(p: Player): void {
     // Training has no permadeath: restore the ship, shove the swarm back and
     // let the pilot keep learning.
     if (this.tutorialDir) {
-      this.player.dead = false;
-      this.player.hp = this.stats.maxHp;
-      this.player.iframes = 2.5;
+      p.dead = false;
+      p.hp = p.stats.maxHp;
+      p.iframes = 2.5;
       for (const e of this.enemies.list) {
-        const a = Math.atan2(e.y - this.player.y, e.x - this.player.x);
+        const a = Math.atan2(e.y - p.y, e.x - p.x);
         e.kvx += Math.cos(a) * 620;
         e.kvy += Math.sin(a) * 620;
       }
-      this.particles.ring(this.player.x, this.player.y, '#35f0ff', 12, 520, 0.6, 6);
+      this.particles.ring(p.x, p.y, '#35f0ff', 12, 520, 0.6, 6);
       this.audio.play('heart');
       this.deps.ui.banner(S.tutReviveTitle, S.tutReviveSub);
       return;
@@ -308,11 +329,11 @@ export class GameScene implements Scene, World {
     this.hitStop(0.28, 0.04);
     this.shake(60);
     this.audio.play('dieBig');
-    this.particles.burst(this.deathDot, this.player.x, this.player.y, {
+    this.particles.burst(this.deathDot, p.x, p.y, {
       count: 26, speed: 260, size: 1.8, life: 0.8,
     });
-    this.particles.ring(this.player.x, this.player.y, '#35f0ff', 12, 520, 0.6, 6);
-    this.particles.ring(this.player.x, this.player.y, '#ffffff', 6, 380, 0.45, 3);
+    this.particles.ring(p.x, p.y, '#35f0ff', 12, 520, 0.6, 6);
+    this.particles.ring(p.x, p.y, '#ffffff', 6, 380, 0.45, 3);
     this.deps.ui.hideTutorial();
   }
 
@@ -375,7 +396,7 @@ export class GameScene implements Scene, World {
     const choices = rollChoices(this.lv);
     if (choices.length === 0) {
       // Everything maxed — convert the level into survivability.
-      this.player.heal(this.stats.maxHp * 0.3, this);
+      this.player.heal(this.player.stats.maxHp * 0.3, this);
       this.state = 'playing';
       return;
     }
@@ -384,7 +405,6 @@ export class GameScene implements Scene, World {
       this.upgLevels.set(def.id, this.lv(def.id) + 1);
       const next = computeStats(this.deps.save.data, this.lv);
       this.player.applyStats(next);
-      this.stats = next;
       if (def.id === 'vital') this.player.heal(next.maxHp * 0.35, this);
       this.audio.play('confirm');
       if (this.player.pendingLevels > 0) {
@@ -422,8 +442,8 @@ export class GameScene implements Scene, World {
     this.pickups.render(ctx, time);
     this.enemyShots.render(ctx, time);
     this.enemies.render(ctx, time);
-    this.orbitals.render(ctx, this);
-    this.nova.render(ctx, this, time);
+    this.orbitals.render(ctx, this.player);
+    this.nova.render(ctx, this.player, time);
     this.player.render(ctx, time);
     this.playerShots.render(ctx);
     this.particles.render(ctx);
@@ -445,7 +465,7 @@ export class GameScene implements Scene, World {
 
     const hv = this.hudView;
     hv.hp = this.player.hp;
-    hv.maxHp = this.stats.maxHp;
+    hv.maxHp = this.player.stats.maxHp;
     hv.level = this.player.level;
     hv.xp = this.player.xp;
     hv.xpNeed = this.player.xpNeed;

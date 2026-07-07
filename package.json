@@ -7,18 +7,22 @@
   "scripts": {
     "dev": "node scripts/build.mjs --serve",
     "dev:full": "vercel dev",
+    "dev:server": "node scripts/build-server.mjs && node server/dist/index.js",
     "build": "node scripts/build.mjs",
-    "typecheck": "tsc --noEmit && tsc -p api --noEmit",
+    "build:server": "node scripts/build-server.mjs",
+    "typecheck": "tsc --noEmit && tsc -p api --noEmit && tsc -p server --noEmit",
     "db:apply": "node scripts/db-apply.mjs",
     "icons": "node scripts/gen-icons.mjs"
   },
   "dependencies": {
     "google-auth-library": "^10.1.0",
     "jose": "^6.0.11",
-    "pg": "^8.16.0"
+    "pg": "^8.16.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/pg": "^8.15.4",
+    "@types/ws": "^8.5.13",
     "@vercel/node": "^5.3.0",
     "esbuild": "^0.25.0",
     "playwright-core": "^1.61.1",

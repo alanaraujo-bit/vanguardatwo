@@ -3,9 +3,12 @@ import { chance, dist2, TAU } from '../core/utils';
 import { drawSprite, glowDot, shapeSprite, BOLT_POINTS, type Sprite } from '../fx/sprites';
 import { BAL } from './balance';
 import type { Enemy } from './enemies';
+import type { Player } from './player';
 import type { World } from './world';
 
-interface Shot {
+export interface Shot {
+  /** Network identity for snapshot interpolation; inert in solo play. */
+  id: number;
   x: number; y: number;
   vx: number; vy: number;
   angle: number;
@@ -14,6 +17,10 @@ interface Shot {
   pierce: number;
   bounce: number;
   life: number;
+  /** Slot of the player who fired — kill credit and co-op attribution. */
+  owner: number;
+  /** Speed frozen at spawn so later stat changes don't bend live shots. */
+  projSpeed: number;
   hits: Enemy[];
 }
 
@@ -21,24 +28,19 @@ const RICOCHET_RANGE = 250;
 
 export class PlayerShots {
   private readonly pool = new Pool<Shot>(() => ({
-    x: 0, y: 0, vx: 0, vy: 0, angle: 0, dmg: 0, crit: false,
-    pierce: 0, bounce: 0, life: 0, hits: [],
+    id: 0, x: 0, y: 0, vx: 0, vy: 0, angle: 0, dmg: 0, crit: false,
+    pierce: 0, bounce: 0, life: 0, owner: 0, projSpeed: BAL.player.projSpeed, hits: [],
   }));
-  private readonly active: Shot[] = [];
-  private readonly bolt: Sprite;
-  private readonly boltCrit: Sprite;
-  private readonly spark: Sprite;
-  private readonly muzzle: Sprite;
+  readonly active: Shot[] = [];
+  private nextId = 1;
+  // Sprites bake lazily on first render so this class can run headless.
+  private bolt: Sprite | null = null;
+  private boltCrit: Sprite | null = null;
+  private spark: Sprite | null = null;
+  private muzzle: Sprite | null = null;
 
-  constructor() {
-    this.bolt = shapeSprite({ radius: 7, color: '#35f0ff', points: BOLT_POINTS, fillAlpha: 0.5 });
-    this.boltCrit = shapeSprite({ radius: 9, color: '#ffc857', points: BOLT_POINTS, fillAlpha: 0.55 });
-    this.spark = glowDot(4, '#7df3ff');
-    this.muzzle = glowDot(7, '#b5faff');
-  }
-
-  spawnVolley(x: number, y: number, angle: number, world: World): void {
-    const s = world.stats;
+  spawnVolley(owner: Player, angle: number, world: World): void {
+    const s = owner.stats;
     const n = s.projectiles;
     const step = 0.11;
     const start = angle - ((n - 1) / 2) * step;
@@ -46,8 +48,9 @@ export class PlayerShots {
       const a = start + i * step;
       const crit = chance(s.critChance);
       const shot = this.pool.obtain();
-      shot.x = x + Math.cos(a) * 16;
-      shot.y = y + Math.sin(a) * 16;
+      shot.id = this.nextId++;
+      shot.x = owner.x + Math.cos(a) * 16;
+      shot.y = owner.y + Math.sin(a) * 16;
       shot.angle = a;
       shot.vx = Math.cos(a) * s.projSpeed;
       shot.vy = Math.sin(a) * s.projSpeed;
@@ -56,10 +59,14 @@ export class PlayerShots {
       shot.pierce = s.pierce;
       shot.bounce = s.bounce;
       shot.life = BAL.player.projLife;
+      shot.owner = owner.slot;
+      shot.projSpeed = s.projSpeed;
       shot.hits.length = 0;
       this.active.push(shot);
     }
-    world.particles.spawn(this.muzzle, x + Math.cos(angle) * 18, y + Math.sin(angle) * 18, 0, 0, 0.12, 1.4, 0.2);
+    if (this.muzzle) {
+      world.particles.spawn(this.muzzle, owner.x + Math.cos(angle) * 18, owner.y + Math.sin(angle) * 18, 0, 0, 0.12, 1.4, 0.2);
+    }
     world.audio.play('shoot');
   }
 
@@ -74,7 +81,7 @@ export class PlayerShots {
       shot.x += shot.vx * dt;
       shot.y += shot.vy * dt;
 
-      if (Math.random() < dt * 20) {
+      if (this.spark && Math.random() < dt * 20) {
         world.particles.spawn(this.spark, shot.x, shot.y, 0, 0, 0.18, 0.8, 0.1);
       }
 
@@ -85,7 +92,8 @@ export class PlayerShots {
         if (dist2(shot.x, shot.y, e.x, e.y) > r * r) return;
         shot.hits.push(e);
         const knock = 130 + shot.dmg * 2;
-        world.enemies.damage(e, shot.dmg, shot.crit, (shot.vx / world.stats.projSpeed) * knock, (shot.vy / world.stats.projSpeed) * knock, world);
+        const killer = world.players[shot.owner] ?? null;
+        world.enemies.damage(e, shot.dmg, shot.crit, (shot.vx / shot.projSpeed) * knock, (shot.vy / shot.projSpeed) * knock, world, killer);
 
         if (shot.bounce > 0) {
           const next = this.findRicochetTarget(shot, world);
@@ -93,8 +101,8 @@ export class PlayerShots {
             shot.bounce--;
             const a = Math.atan2(next.y - shot.y, next.x - shot.x);
             shot.angle = a;
-            shot.vx = Math.cos(a) * world.stats.projSpeed;
-            shot.vy = Math.sin(a) * world.stats.projSpeed;
+            shot.vx = Math.cos(a) * shot.projSpeed;
+            shot.vy = Math.sin(a) * shot.projSpeed;
             shot.life = BAL.player.projLife * 0.7;
             return;
           }
@@ -107,7 +115,9 @@ export class PlayerShots {
       });
 
       if (dead) {
-        world.particles.burst(this.spark, shot.x, shot.y, { count: 3, speed: 90, life: 0.22, size: 1 });
+        if (this.spark) {
+          world.particles.burst(this.spark, shot.x, shot.y, { count: 3, speed: 90, life: 0.22, size: 1 });
+        }
         this.pool.free(swapRemove(this.active, i));
       }
     }
@@ -127,9 +137,18 @@ export class PlayerShots {
     return best;
   }
 
+  private ensureSprites(): void {
+    if (this.bolt) return;
+    this.bolt = shapeSprite({ radius: 7, color: '#35f0ff', points: BOLT_POINTS, fillAlpha: 0.5 });
+    this.boltCrit = shapeSprite({ radius: 9, color: '#ffc857', points: BOLT_POINTS, fillAlpha: 0.55 });
+    this.spark = glowDot(4, '#7df3ff');
+    this.muzzle = glowDot(7, '#b5faff');
+  }
+
   render(ctx: CanvasRenderingContext2D): void {
+    this.ensureSprites();
     for (const shot of this.active) {
-      drawSprite(ctx, shot.crit ? this.boltCrit : this.bolt, shot.x, shot.y, shot.angle);
+      drawSprite(ctx, shot.crit ? this.boltCrit! : this.bolt!, shot.x, shot.y, shot.angle);
     }
   }
 
@@ -139,7 +158,9 @@ export class PlayerShots {
   }
 }
 
-interface Orb {
+export interface Orb {
+  /** Network identity for snapshot interpolation; inert in solo play. */
+  id: number;
   x: number; y: number;
   vx: number; vy: number;
   dmg: number;
@@ -147,16 +168,14 @@ interface Orb {
 }
 
 export class EnemyShots {
-  private readonly pool = new Pool<Orb>(() => ({ x: 0, y: 0, vx: 0, vy: 0, dmg: 0, life: 0 }));
-  private readonly active: Orb[] = [];
-  private readonly orb: Sprite;
-
-  constructor() {
-    this.orb = glowDot(7, '#ff4ecd');
-  }
+  private readonly pool = new Pool<Orb>(() => ({ id: 0, x: 0, y: 0, vx: 0, vy: 0, dmg: 0, life: 0 }));
+  readonly active: Orb[] = [];
+  private nextId = 1;
+  private orb: Sprite | null = null;
 
   spawn(x: number, y: number, angle: number, speed: number, dmg: number): void {
     const o = this.pool.obtain();
+    o.id = this.nextId++;
     o.x = x;
     o.y = y;
     o.vx = Math.cos(angle) * speed;
@@ -167,7 +186,6 @@ export class EnemyShots {
   }
 
   update(dt: number, world: World): void {
-    const p = world.player;
     for (let i = this.active.length - 1; i >= 0; i--) {
       const o = this.active[i];
       o.life -= dt;
@@ -177,16 +195,23 @@ export class EnemyShots {
       }
       o.x += o.vx * dt;
       o.y += o.vy * dt;
-      const r = p.radius + 7;
-      if (!p.dead && dist2(o.x, o.y, p.x, p.y) < r * r) {
-        p.takeDamage(o.dmg, world);
-        world.particles.burst(this.orb, o.x, o.y, { count: 5, speed: 110, life: 0.25 });
-        this.pool.free(swapRemove(this.active, i));
+      for (const p of world.players) {
+        if (p.dead) continue;
+        const r = p.radius + 7;
+        if (dist2(o.x, o.y, p.x, p.y) < r * r) {
+          p.takeDamage(o.dmg, world);
+          if (this.orb) {
+            world.particles.burst(this.orb, o.x, o.y, { count: 5, speed: 110, life: 0.25 });
+          }
+          this.pool.free(swapRemove(this.active, i));
+          break;
+        }
       }
     }
   }
 
   render(ctx: CanvasRenderingContext2D, time: number): void {
+    if (!this.orb) this.orb = glowDot(7, '#ff4ecd');
     for (const o of this.active) {
       const pulse = 1 + Math.sin(time * 12 + o.x) * 0.15;
       drawSprite(ctx, this.orb, o.x, o.y, 0, pulse);

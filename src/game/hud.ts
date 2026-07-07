@@ -15,6 +15,17 @@ export interface HudView {
   boss: { hp: number; maxHp: number; name: string } | null;
   /** Guided tutorial pins wave at 1 and shows its own skip button up top; skip the pill to avoid overlap. */
   hideWave?: boolean;
+  /** Co-op: the other pilot's vitals, shown as a mini panel under the level chip. */
+  partner?: {
+    name: string;
+    hp: number;
+    maxHp: number;
+    level: number;
+    dead: boolean;
+    choosing: boolean;
+  } | null;
+  /** Co-op: smoothed round-trip time in ms. */
+  ping?: number;
 }
 
 const FONT = '"Segoe UI", system-ui, -apple-system, sans-serif';
@@ -114,6 +125,31 @@ export class Hud {
     ctx.arc(rightX - ctw - 8, hudY + cellHeight + 4, 3, 0, Math.PI * 2);
     ctx.fillStyle = '#ffc857';
     ctx.fill();
+
+    // Co-op: partner vitals under the level chip.
+    if (v.partner) {
+      const p = v.partner;
+      const py = hudY + cellHeight + 18;
+      const pw = Math.min(88, hpW);
+      ctx.font = `700 9px ${FONT}`;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = p.dead ? '#ff5d73' : '#9ff2ff';
+      const label = p.dead ? `${p.name} · CAÍDO` : p.choosing ? `${p.name} · ESCOLHENDO…` : `${p.name} · NV${p.level}`;
+      ctx.fillText(label.slice(0, 26), MARGIN, py);
+      this.bar(ctx, MARGIN, py + 5, pw, 6, 3, 'rgba(6,10,24,0.72)');
+      const pr = p.maxHp > 0 ? clamp(p.hp / p.maxHp, 0, 1) : 0;
+      if (pr > 0 && !p.dead) {
+        this.bar(ctx, MARGIN + 1, py + 6, (pw - 2) * pr, 4, 2, pr < 0.35 ? '#ff3b5c' : '#52ffa8', 0.9);
+      }
+    }
+
+    // Co-op: ping under the coins counter.
+    if (v.ping !== undefined && v.ping > 0) {
+      ctx.font = `700 9px ${FONT}`;
+      ctx.textAlign = 'right';
+      ctx.fillStyle = v.ping < 90 ? 'rgba(125,243,255,0.7)' : v.ping < 180 ? '#ffc857' : '#ff5d73';
+      ctx.fillText(`${v.ping}ms`, rightX, hudY + cellHeight + 18);
+    }
 
     // Combo counter below main row.
     if (v.combo > this.lastCombo) this.comboPop = 1;

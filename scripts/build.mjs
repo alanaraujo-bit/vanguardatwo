@@ -35,6 +35,9 @@ const options = {
     // Public identifier (not a secret): the Google OAuth client id the login
     // button uses. Injected at build time; empty string disables the button.
     __GOOGLE_CLIENT_ID__: JSON.stringify(process.env.GOOGLE_CLIENT_ID ?? ''),
+    // Realtime game-server endpoint (co-op). Dev default is the local server
+    // from `npm run dev:server`; production passes WS_URL (Railway).
+    __WS_URL__: JSON.stringify(process.env.WS_URL ?? 'ws://127.0.0.1:8138'),
   },
 };
 

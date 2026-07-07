@@ -65,7 +65,7 @@ export class TutorialDirector implements Director {
       title: S.tutMoveTitle,
       sub: S.tutMoveSub,
       done: (dt, w, t) => {
-        if (w.input.magnitude > 0.2) t.moveT += dt;
+        if (w.players[0].intentMag > 0.2) t.moveT += dt;
         return t.moveT >= 1.5;
       },
     },
@@ -101,9 +101,10 @@ export class TutorialDirector implements Director {
       enter: (w) => {
         // A few bonus gems just outside the magnet radius, so walking to
         // them demonstrates the pull.
+        const p = w.players[0];
         for (let i = 0; i < 3; i++) {
           const a = (i / 3) * TAU + Math.random();
-          w.pickups.spawnGems(w.player.x + Math.cos(a) * 110, w.player.y + Math.sin(a) * 110, 1);
+          w.pickups.spawnGems(p.x + Math.cos(a) * 110, p.y + Math.sin(a) * 110, 1);
         }
       },
       done: (_dt, _w, t) => t.gems >= 6,
@@ -119,9 +120,10 @@ export class TutorialDirector implements Director {
       title: S.tutCoinsTitle,
       sub: S.tutCoinsSub,
       enter: (w) => {
+        const p = w.players[0];
         for (let i = 0; i < 3; i++) {
           const a = (i / 3) * TAU + Math.random();
-          w.pickups.spawnCoins(w.player.x + Math.cos(a) * 120, w.player.y + Math.sin(a) * 120, 1);
+          w.pickups.spawnCoins(p.x + Math.cos(a) * 120, p.y + Math.sin(a) * 120, 1);
         }
       },
       done: (_dt, _w, t) => t.coins >= 1,
@@ -160,13 +162,14 @@ export class TutorialDirector implements Director {
       title: S.tutGradTitle,
       sub: S.tutGradSub,
       enter: (w, t) => {
+        const p = w.players[0];
         w.enemies.clear();
         w.enemyShots.clear();
-        w.particles.ring(w.player.x, w.player.y, '#52ffa8', 12, 520, 0.7, 5);
+        w.particles.ring(p.x, p.y, '#52ffa8', 12, 520, 0.7, 5);
         w.audio.play('record');
         t.deps.save.data.coins += TUTORIAL_REWARD;
         t.deps.save.persist();
-        w.floaters.spawn(w.player.x, w.player.y - 30, `+${TUTORIAL_REWARD}`, {
+        w.floaters.spawn(p.x, p.y - 30, `+${TUTORIAL_REWARD}`, {
           color: '#ffc857', size: 16, bold: true,
         });
         t.deps.ui.banner(S.tutDoneBanner, S.tutDoneSub);
@@ -230,10 +233,12 @@ export class TutorialDirector implements Director {
         if (!e.dead) ring(ctx, e.x, e.y, e.radius + 14, time, '#ff8aa5');
       }
     } else if (step.id === 'gemas') {
-      const p = world.pickups.nearestOfKind('gem', world.player.x, world.player.y);
+      const pl = world.players[0];
+      const p = world.pickups.nearestOfKind('gem', pl.x, pl.y);
       if (p) ring(ctx, p[0], p[1], 22, time, '#52ffa8');
     } else if (step.id === 'moedas') {
-      const p = world.pickups.nearestOfKind('coin', world.player.x, world.player.y);
+      const pl = world.players[0];
+      const p = world.pickups.nearestOfKind('coin', pl.x, pl.y);
       if (p) ring(ctx, p[0], p[1], 22, time, '#ffc857');
     }
   }

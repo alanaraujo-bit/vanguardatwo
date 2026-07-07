@@ -61,3 +61,8 @@ create table if not exists runs (
 );
 
 create index if not exists runs_player_idx on runs (player_id, created_at desc);
+
+-- Co-op (server-authoritative runs). mode='coop' never feeds the solo lb_*
+-- boards; a future co-op leaderboard can rank these rows directly.
+alter table runs add column if not exists mode text not null default 'solo';
+alter table runs add column if not exists party_size int not null default 1;

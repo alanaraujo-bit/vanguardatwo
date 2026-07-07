@@ -916,3 +916,89 @@ html, body {
   .logo, .btn.pulse, .tutorial-dot, .boot-logo { animation: none; }
   .screen { transition-duration: 0.15s; }
 }
+
+/* ————— co-op ————— */
+
+.coop-actions { width: min(340px, 100%); }
+.coop-join-row { width: 100%; }
+.coop-code {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+  font-weight: 800;
+}
+.coop-status { min-height: 1.4em; color: #ff9eb5; }
+
+.coop-code-panel { text-align: center; padding: 14px 22px; }
+.coop-code-big {
+  font-size: 40px;
+  font-weight: 900;
+  letter-spacing: 0.3em;
+  color: #7df3ff;
+  text-shadow: 0 0 18px rgba(53, 240, 255, 0.55);
+  margin-top: 4px;
+  user-select: all;
+}
+.coop-slots { width: min(340px, 100%); margin-top: 12px; }
+.coop-slot { display: flex; align-items: center; gap: 8px; padding: 12px 14px; }
+.coop-slot.empty { opacity: 0.55; border-style: dashed; }
+.coop-tags { display: flex; gap: 6px; }
+.chip.small { font-size: 10px; padding: 3px 8px; }
+.chip.ready { color: #52ffa8; border-color: rgba(82, 255, 168, 0.4); }
+
+/* level-up co-op: folha inferior que NÃO pausa nem cobre o jogo */
+.s-levelupcoop {
+  background: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  pointer-events: none;
+  justify-content: flex-end;
+  padding-bottom: calc(var(--safe-bottom) + 12px);
+}
+.s-levelupcoop.on { pointer-events: none; }
+.coop-sheet {
+  pointer-events: auto;
+  width: min(560px, 100%);
+  background: rgba(6, 10, 24, 0.88);
+  border: 1px solid rgba(53, 240, 255, 0.25);
+  border-radius: 14px;
+  padding: 10px 12px 12px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.coop-sheet-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: #52ffa8;
+  text-align: center;
+}
+.coop-timer {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  margin: 6px 0 8px;
+  overflow: hidden;
+}
+.coop-timer-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #35f0ff, #52ffa8);
+  border-radius: 2px;
+  transition: width 0.1s linear;
+}
+.coop-cards { gap: 8px; align-items: stretch; }
+.coop-card {
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  text-align: center;
+  padding: 10px 8px;
+  gap: 6px;
+}
+.coop-card .item-desc { font-size: 10px; }
+.coop-card .item-name { font-size: 11px; }
+.coop-card .pips { justify-content: center; }
+.coop-result { margin-bottom: 8px; }

@@ -2,6 +2,7 @@ import { Pool, swapRemove } from '../core/pool';
 import { chance, clamp, damp, dist2, len, rand, randInt, TAU } from '../core/utils';
 import { drawSprite, glowDot, shapeSprite, DART_POINTS, QUEEN_POINTS, STINGER_POINTS, type ShapePoints, type Sprite } from '../fx/sprites';
 import { BAL } from './balance';
+import type { Player } from './player';
 import type { World } from './world';
 
 export type EnemyKind =
@@ -78,6 +79,8 @@ const ST_WINDUP = 1;
 const ST_LUNGE = 2;
 
 export class Enemy {
+  /** Network identity for snapshot interpolation; inert in solo play. */
+  id = 0;
   kind: EnemyKind = 'drone';
   x = 0; y = 0;
   vx = 0; vy = 0;
@@ -150,7 +153,7 @@ class SpatialHash {
   }
 }
 
-interface AoeEvent { x: number; y: number; r: number; dmg: number; }
+interface AoeEvent { x: number; y: number; r: number; dmg: number; owner: Player | null; }
 interface SpawnEvent { kind: EnemyKind; x: number; y: number; hpMul: number; dmgMul: number; }
 
 export class Enemies {
@@ -159,13 +162,15 @@ export class Enemies {
   boss: Enemy | null = null;
 
   private readonly pool = new Pool<Enemy>(() => new Enemy());
+  // Sprites bake lazily on first render so this class can run headless.
   private readonly sprites = new Map<EnemyKind, Sprite>();
   private readonly flashes = new Map<EnemyKind, Sprite>();
   private readonly debris = new Map<EnemyKind, Sprite>();
   private readonly pendingAoe: AoeEvent[] = [];
   private readonly pendingSpawn: SpawnEvent[] = [];
 
-  constructor() {
+  private ensureSprites(): void {
+    if (this.sprites.size > 0) return;
     (Object.keys(ENEMY_SHAPE_OPTS) as EnemyKind[]).forEach((kind) => {
       const [normal, flash] = this.bake(kind, ENEMY_SHAPE_OPTS[kind]);
       this.sprites.set(kind, normal);
@@ -183,9 +188,12 @@ export class Enemies {
     ];
   }
 
+  private nextId = 1;
+
   spawn(kind: EnemyKind, x: number, y: number, hpMul: number, dmgMul: number): Enemy {
     const spec = SPECS[kind];
     const e = this.pool.obtain();
+    e.id = this.nextId++;
     e.kind = kind;
     e.x = x; e.y = y;
     e.vx = 0; e.vy = 0;
@@ -226,8 +234,6 @@ export class Enemies {
   }
 
   update(dt: number, world: World): void {
-    const player = world.player;
-
     // Rebuild the spatial index (also consumed by shots/blades this frame).
     this.hash.begin();
     for (const e of this.list) {
@@ -260,8 +266,9 @@ export class Enemies {
         e.y += ((e.y - other.y) / d) * push;
       });
 
-      // Contact damage.
-      if (!player.dead && player.iframes <= 0) {
+      // Contact damage, against every living player.
+      for (const player of world.players) {
+        if (player.dead || player.iframes > 0) continue;
         const r = e.radius + player.radius;
         if (dist2(e.x, e.y, player.x, player.y) < r * r) {
           player.takeDamage(e.dmg, world);
@@ -288,7 +295,7 @@ export class Enemies {
         if (e.dead) continue;
         if (dist2(aoe.x, aoe.y, e.x, e.y) > r2) continue;
         const a = Math.atan2(e.y - aoe.y, e.x - aoe.x);
-        this.damage(e, aoe.dmg, false, Math.cos(a) * 180, Math.sin(a) * 180, world);
+        this.damage(e, aoe.dmg, false, Math.cos(a) * 180, Math.sin(a) * 180, world, aoe.owner);
       }
     }
     this.pendingAoe.length = 0;
@@ -301,7 +308,10 @@ export class Enemies {
   }
 
   private steer(e: Enemy, dt: number, world: World): void {
-    const p = world.player;
+    // Each enemy hunts whichever living player is closest; when the whole
+    // squad is down there is nothing left to chase.
+    const p = world.nearestPlayer(e.x, e.y);
+    if (!p) return;
     const dx = p.x - e.x;
     const dy = p.y - e.y;
     const d = len(dx, dy) || 1;
@@ -351,7 +361,7 @@ export class Enemies {
         e.vy += (ty - e.vy) * damp(5, dt);
         e.rot = Math.atan2(dy, dx) + Math.PI / 2;
         e.fireT -= dt;
-        if (e.fireT <= 0 && d < 320 && !p.dead) {
+        if (e.fireT <= 0 && d < 320) {
           e.fireT = rand(2.1, 2.9);
           world.enemyShots.spawn(e.x, e.y, Math.atan2(dy, dx), 165, e.dmg * 0.85);
           world.audio.play('shotE');
@@ -417,7 +427,7 @@ export class Enemies {
         e.vy += (ty - e.vy) * damp(4, dt);
         e.rot += dt * 1.6 * spin;
         e.fireT -= dt;
-        if (e.fireT <= 0 && d < 360 && !p.dead) {
+        if (e.fireT <= 0 && d < 360) {
           e.fireT = rand(2.6, 3.4);
           const aim = Math.atan2(dy, dx);
           for (let i = -1; i <= 1; i++) {
@@ -583,7 +593,7 @@ export class Enemies {
     }
   }
 
-  damage(e: Enemy, amount: number, crit: boolean, kx: number, ky: number, world: World): void {
+  damage(e: Enemy, amount: number, crit: boolean, kx: number, ky: number, world: World, killer: Player | null = null): void {
     if (e.dead) return;
     e.hp -= amount;
     e.flash = 0.09;
@@ -597,19 +607,21 @@ export class Enemies {
       bold: crit,
     });
     world.audio.play('hit', crit ? 0.8 : 1.1);
-    if (e.hp <= 0) this.kill(e, world);
+    if (e.hp <= 0) this.kill(e, world, killer);
   }
 
-  private kill(e: Enemy, world: World): void {
+  private kill(e: Enemy, world: World, killer: Player | null): void {
     e.dead = true;
-    const debris = this.debris.get(e.kind)!;
+    const debris = this.debris.get(e.kind);
     const big = e.radius >= 18;
-    world.particles.burst(debris, e.x, e.y, {
-      count: big ? 18 : 9,
-      speed: big ? 210 : 150,
-      size: big ? 1.6 : 1.1,
-      life: big ? 0.55 : 0.4,
-    });
+    if (debris) {
+      world.particles.burst(debris, e.x, e.y, {
+        count: big ? 18 : 9,
+        speed: big ? 210 : 150,
+        size: big ? 1.6 : 1.1,
+        life: big ? 0.55 : 0.4,
+      });
+    }
     if (big) world.particles.ring(e.x, e.y, SPECS[e.kind].color, 10, 380, 0.4, 4);
     world.audio.play(big ? 'dieBig' : 'die');
     if (big) world.shake(8);
@@ -646,14 +658,15 @@ export class Enemies {
       this.boss = null;
       world.onBossDefeated(e);
     }
-    world.onEnemyKilled(e);
+    world.onEnemyKilled(e, killer);
   }
 
-  queueAoe(x: number, y: number, r: number, dmg: number): void {
-    this.pendingAoe.push({ x, y, r, dmg });
+  queueAoe(x: number, y: number, r: number, dmg: number, owner: Player | null = null): void {
+    this.pendingAoe.push({ x, y, r, dmg, owner });
   }
 
   render(ctx: CanvasRenderingContext2D, time: number): void {
+    this.ensureSprites();
     for (const e of this.list) {
       if (e.dead) continue;
       const sprite = this.sprites.get(e.kind)!;

@@ -24,6 +24,13 @@ export interface Director {
  * encounter every few waves that must be defeated to advance, and a sector
  * change every SECTOR_LEN waves that swaps the whole battlefield identity.
  */
+export interface WaveBudget {
+  /** Multiplies maxAlive (co-op spawns more simultaneous enemies). */
+  maxAliveMul?: number;
+  /** Multiplies the per-interval spawn batch size. */
+  batchMul?: number;
+}
+
 export class WaveDirector implements Director {
   wave = 1;
   bossActive = false;
@@ -33,8 +40,13 @@ export class WaveDirector implements Director {
   private bossWarnT = 0;
   private bossPending = false;
   private trickleT = 0;
+  private readonly maxAliveMul: number;
+  private readonly batchMul: number;
 
-  constructor(private readonly events: WaveEvents) {}
+  constructor(private readonly events: WaveEvents, budget: WaveBudget = {}) {
+    this.maxAliveMul = budget.maxAliveMul ?? 1;
+    this.batchMul = budget.batchMul ?? 1;
+  }
 
   update(dt: number, world: World): void {
     if (this.bossPending) {
@@ -65,9 +77,9 @@ export class WaveDirector implements Director {
     }
 
     this.spawnT -= dt;
-    if (this.spawnT <= 0 && world.enemies.list.length < BAL.wave.maxAlive(this.wave)) {
+    if (this.spawnT <= 0 && world.enemies.list.length < BAL.wave.maxAlive(this.wave) * this.maxAliveMul) {
       this.spawnT = BAL.wave.spawnInterval(this.wave);
-      const batch = 1 + Math.floor(this.wave / 6);
+      const batch = Math.max(1, Math.round((1 + Math.floor(this.wave / 6)) * this.batchMul));
       for (let i = 0; i < batch; i++) this.spawnOne(world);
     }
   }

@@ -108,4 +108,15 @@ export class Input {
     this.magnitude = clamp(len(x, y), 0, 1);
     if (this.magnitude > 0.2) this.hasMoved = true;
   }
+
+  /**
+   * Movement intent for the simulation, quantized to 2 decimals so the local
+   * sim consumes exactly the same numbers that travel over the wire in co-op.
+   */
+  sample(): { mx: number; my: number } {
+    return {
+      mx: Math.round(this.moveX * 100) / 100,
+      my: Math.round(this.moveY * 100) / 100,
+    };
+  }
 }

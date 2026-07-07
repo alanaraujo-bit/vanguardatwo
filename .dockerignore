@@ -1,0 +1,9 @@
+node_modules
+dist
+server/dist
+public
+db
+.vercel
+.env*
+.git
+*.md

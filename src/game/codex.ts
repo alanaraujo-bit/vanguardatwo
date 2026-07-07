@@ -355,6 +355,24 @@ const resourceEntries: CodexEntry[] = [
 
 const systemEntries: CodexEntry[] = [
   {
+    id: 'coop',
+    name: 'Operação em Dupla (CO-OP)',
+    tagline: 'Duas naves, uma sala, um código — sobrevivam juntos.',
+    lore: 'O comando autorizou operações em dupla: um piloto cria a sala, recebe um código curto e o parceiro entra com ele. A partida roda no servidor do comando — justa e idêntica para os dois — e a Ruína responde ao dobro de poder de fogo com enxames maiores e mais resistentes.',
+    tactic: 'A experiência é individual: cada piloto enche a própria barra e escolhe suas melhorias sem pausar a batalha (com uma janela curta de invulnerabilidade). Se um cair, vira espectador e renasce no início da onda seguinte com metade da vida — a run só termina se os dois caírem na mesma onda. As moedas da dupla são somadas no fim e divididas igualmente.',
+    accent: '#b45cff',
+    icon: paintIcon('multi', '#b45cff', 48),
+    stats: [
+      { label: 'Pilotos', value: '2 (sala por código de 5 letras)' },
+      { label: 'Vida dos inimigos', value: `+${Math.round((BAL.coop.hpMul - 1) * 100)}% (chefes +${Math.round((BAL.coop.bossHpMul - 1) * 100)}%)` },
+      { label: 'Enxame', value: `+${Math.round((BAL.coop.maxAliveMul - 1) * 100)}% de inimigos simultâneos` },
+      { label: 'Renascimento', value: `Onda seguinte, com ${pct(BAL.coop.reviveHpFrac)} da vida` },
+      { label: 'Escolha de melhoria', value: `Sem pausa — ${BAL.coop.levelupInvuln}s de invulnerabilidade pessoal` },
+      { label: 'Moedas', value: 'Pot da dupla dividido 50/50 no fim' },
+      { label: 'Pontuação', value: 'Individual, por piloto' },
+    ],
+  },
+  {
     id: 'sectors',
     name: 'Setores',
     tagline: `A campanha — a cada ${SECTOR_LEN} ondas, um mundo novo.`,

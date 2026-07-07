@@ -89,4 +89,6 @@ export const api = {
     request<ProfileResponse>(`/api/profile?handle=${encodeURIComponent(handle)}`, { timeoutMs: 10_000 }),
   patchName: (name: string) =>
     request<MeResponse>('/api/profile', { method: 'PATCH', body: { name }, timeoutMs: 10_000 }),
+  realtimeToken: () =>
+    request<{ token: string }>('/api/realtime-token', { timeoutMs: 5_000 }),
 };

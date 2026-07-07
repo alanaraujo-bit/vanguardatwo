@@ -57,4 +57,18 @@ export const BAL = {
     perSecond: 4,
     coinsPerWave: 3,
   },
+  /**
+   * Co-op (2 players): the arena has twice the firepower, so enemies scale
+   * up in durability and volume. Solo play never reads this block.
+   */
+  coop: {
+    hpMul: 1.6,
+    dmgMul: 1.1,
+    bossHpMul: 1.75,
+    maxAliveMul: 1.5,
+    batchMul: 1.5,
+    reviveHpFrac: 0.5,
+    /** Seconds a level-up offer stays open (personal invuln window). */
+    levelupInvuln: 6,
+  },
 } as const;
