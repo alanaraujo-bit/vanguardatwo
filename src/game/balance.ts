@@ -13,6 +13,10 @@ export const BAL = {
     critMult: 2,
     aimRange: 500,
     iframes: 0.8,
+    // Movement response rates (damp): braking and reversing are much faster
+    // than accelerating so the ship stops where the thumb stops and dodges
+    // bite immediately, while keeping a smooth ramp-up.
+    move: { accel: 24, brake: 40, flip: 42 },
   },
   xpNeed(level: number): number {
     return Math.round(6 + (level - 1) * 4 + Math.pow(level - 1, 1.85));

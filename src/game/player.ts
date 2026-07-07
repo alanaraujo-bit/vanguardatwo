@@ -94,11 +94,19 @@ export class Player {
     this.recoil = Math.max(0, this.recoil - dt * 6);
     if (s.regen > 0) this.hp = clamp(this.hp + s.regen * dt, 0, s.maxHp);
 
-    // Movement: springy velocity toward the joystick vector.
+    // Movement: springy velocity toward the joystick vector, with asymmetric
+    // response — releasing the stick brakes hard and pushing against the
+    // current motion flips even harder, so stops and dodges feel precise.
     const input = world.input;
-    const k = damp(14, dt);
-    this.vx += (input.moveX * s.speed - this.vx) * k;
-    this.vy += (input.moveY * s.speed - this.vy) * k;
+    const mv = BAL.player.move;
+    const tx = input.moveX * s.speed;
+    const ty = input.moveY * s.speed;
+    let rate: number = mv.accel;
+    if (input.magnitude < 0.01) rate = mv.brake;
+    else if (tx * this.vx + ty * this.vy < 0) rate = mv.flip;
+    const k = damp(rate, dt);
+    this.vx += (tx - this.vx) * k;
+    this.vy += (ty - this.vy) * k;
     this.x += this.vx * dt;
     this.y += this.vy * dt;
 

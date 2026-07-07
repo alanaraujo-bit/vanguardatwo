@@ -169,7 +169,7 @@ export class GameScene implements Scene, World {
   }
 
   private updateCamera(dt: number): void {
-    const k = damp(6, dt);
+    const k = damp(8, dt);
     this.camX += (this.player.x - this.camX) * k;
     this.camY += (this.player.y - this.camY) * k;
     this.trauma = Math.max(0, this.trauma - 2.4 * dt);

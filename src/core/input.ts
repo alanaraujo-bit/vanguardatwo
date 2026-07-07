@@ -1,6 +1,6 @@
 import { clamp, len } from './utils';
 
-const STICK_RADIUS = 58;
+const STICK_RADIUS = 46;
 const DEAD_ZONE = 5;
 
 /**
