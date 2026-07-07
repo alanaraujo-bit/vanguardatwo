@@ -1,10 +1,13 @@
 import { BAL } from './balance';
 import type { EnemyKind } from './enemies';
+import { SECTOR_LEN, sectorForWave, sectorIndexForWave, sectorNumberForWave, type PoolEntry, type SectorDef } from './sectors';
 import type { World } from './world';
 
 export interface WaveEvents {
   onWave(wave: number): void;
-  onBossWarn(): void;
+  onBossWarn(sector: SectorDef): void;
+  /** Fired when the run crosses into a new sector (never for the opening one). */
+  onSector(sector: SectorDef, number: number): void;
 }
 
 /**
@@ -16,20 +19,10 @@ export interface Director {
   update(dt: number, world: World): void;
 }
 
-export interface PoolEntry { kind: EnemyKind; weight: number; from: number; }
-
-/** Which wave each enemy kind starts appearing in — also drives the Codex's "surgimento" line. */
-export const COMPOSITION: readonly PoolEntry[] = [
-  { kind: 'drone', weight: 10, from: 1 },
-  { kind: 'dart', weight: 6, from: 2 },
-  { kind: 'splitter', weight: 4.5, from: 3 },
-  { kind: 'wasp', weight: 4, from: 4 },
-  { kind: 'tank', weight: 3, from: 6 },
-];
-
 /**
- * Drives the run's pacing: timed waves with a rising spawn budget, and a
- * boss encounter every few waves that must be defeated to advance.
+ * Drives the run's pacing: timed waves with a rising spawn budget, a boss
+ * encounter every few waves that must be defeated to advance, and a sector
+ * change every SECTOR_LEN waves that swaps the whole battlefield identity.
  */
 export class WaveDirector implements Director {
   wave = 1;
@@ -59,7 +52,7 @@ export class WaveDirector implements Director {
         this.trickleT -= dt;
         if (this.trickleT <= 0 && world.enemies.list.length < 12) {
           this.trickleT = 2.6;
-          this.spawnOne(world, 'drone');
+          this.spawnOne(world, sectorForWave(this.wave).composition[0].kind);
         }
       }
       return;
@@ -80,13 +73,17 @@ export class WaveDirector implements Director {
   }
 
   private advance(): void {
+    const prev = this.wave;
     this.wave++;
     this.waveT = 0;
     this.spawnT = 0.6;
-    if (this.wave % BAL.wave.bossEvery === 0) {
+    if (sectorIndexForWave(this.wave) !== sectorIndexForWave(prev)) {
+      // The sector banner owns the moment; the wave banner would fight it.
+      this.events.onSector(sectorForWave(this.wave), sectorNumberForWave(this.wave));
+    } else if (this.wave % BAL.wave.bossEvery === 0) {
       this.bossPending = true;
       this.bossWarnT = 1.7;
-      this.events.onBossWarn();
+      this.events.onBossWarn(sectorForWave(this.wave));
     } else {
       this.events.onWave(this.wave);
     }
@@ -99,17 +96,19 @@ export class WaveDirector implements Director {
   }
 
   private rollKind(): EnemyKind {
-    const available = COMPOSITION.filter((c) => this.wave >= c.from);
-    // Basic drones slowly give way to specialists.
+    const sector = sectorForWave(this.wave);
+    const rel = this.wave - sectorIndexForWave(this.wave) * SECTOR_LEN;
+    const available = sector.composition.filter((c) => rel >= c.from);
+    // Fodder slowly gives way to specialists as the sector progresses.
     const weightOf = (c: PoolEntry) =>
-      c.kind === 'drone' ? Math.max(4, c.weight - this.wave * 0.2) : c.weight;
+      c.decay ? Math.max(c.floor ?? 0, c.weight - rel * c.decay) : c.weight;
     const total = available.reduce((sum, c) => sum + weightOf(c), 0);
     let r = Math.random() * total;
     for (const c of available) {
       r -= weightOf(c);
       if (r <= 0) return c.kind;
     }
-    return 'drone';
+    return sector.composition[0].kind;
   }
 
   private spawnBoss(world: World): void {
@@ -117,7 +116,9 @@ export class WaveDirector implements Director {
     this.bossActive = true;
     this.trickleT = 3;
     const [x, y] = world.randomSpawnPos();
-    const spec = BAL.wave.bossHp(this.wave);
-    world.enemies.spawn('boss', x, y, spec / 520, BAL.wave.dmgMul(this.wave));
+    // bossHp is normalized against the Colosso's base HP, so heavier boss
+    // kinds (higher base) naturally hit harder in later sectors.
+    const hpMul = BAL.wave.bossHp(this.wave) / 520;
+    world.enemies.spawn(sectorForWave(this.wave).boss.kind, x, y, hpMul, BAL.wave.dmgMul(this.wave));
   }
 }

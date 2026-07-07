@@ -2,35 +2,108 @@ import { hash2, TAU } from '../core/utils';
 import { glowDot, softDot, drawSprite, type Sprite } from './sprites';
 
 const GRID = 52;
+const HEX_SIDE = 30;
 const STAR_CELL = 140;
 const NEBULA_CELL = 760;
+
+/** Everything that gives a sector's backdrop its identity. */
+export interface BackgroundTheme {
+  /** Vertical gradient stops: top, middle, bottom. */
+  gradient: readonly [string, string, string];
+  /** Parallax blob colors (rgba with alpha baked in). */
+  nebulas: readonly [string, string, string];
+  star: string;
+  /** Grid line color (rgba with alpha baked in). */
+  grid: string;
+  gridStyle: 'square' | 'hex';
+}
+
+/** Sector 1's deep-space look — also the menu backdrop. */
+export const DEFAULT_BG_THEME: BackgroundTheme = {
+  gradient: ['#070a16', '#05070f', '#080714'],
+  nebulas: ['rgba(38, 70, 160, 0.5)', 'rgba(110, 38, 130, 0.45)', 'rgba(18, 100, 120, 0.45)'],
+  star: '#9fd8ff',
+  grid: 'rgba(70, 110, 210, 0.09)',
+  gridStyle: 'square',
+};
 
 /**
  * Infinite scrolling backdrop: deep gradient, parallax nebula blobs and
  * stars (deterministically placed via coordinate hashing, so the world is
  * stable without storing anything), plus a fine grid that anchors motion.
+ * The whole look is swappable per sector via `setTheme`.
  */
 export class Background {
   private vignette: HTMLCanvasElement | null = null;
   private vignetteKey = '';
-  private readonly nebulas: Sprite[];
-  private readonly star: Sprite;
+  private theme: BackgroundTheme = DEFAULT_BG_THEME;
+  private nebulas: Sprite[] = [];
+  private star!: Sprite;
+  private hexPattern: CanvasPattern | null = null;
+  private hexTileW = 0;
+  private hexTileH = 0;
 
   constructor() {
-    this.nebulas = [
-      softDot(110, 'rgba(38, 70, 160, 0.5)'),
-      softDot(90, 'rgba(110, 38, 130, 0.45)'),
-      softDot(100, 'rgba(18, 100, 120, 0.45)'),
-    ];
-    this.star = glowDot(3, '#9fd8ff');
+    this.bake();
+  }
+
+  setTheme(theme: BackgroundTheme): void {
+    if (theme === this.theme) return;
+    this.theme = theme;
+    this.bake();
+  }
+
+  private bake(): void {
+    const t = this.theme;
+    this.nebulas = t.nebulas.map((c) => softDot(100, c));
+    this.star = glowDot(3, t.star);
+    this.hexPattern = t.gridStyle === 'hex' ? this.bakeHexPattern(t.grid) : null;
+  }
+
+  /**
+   * Honeycomb lattice baked once into a repeating pattern tile — rendering
+   * the grid is then a single pattern fill instead of thousands of lineTo.
+   */
+  private bakeHexPattern(color: string): CanvasPattern | null {
+    const a = HEX_SIDE;
+    const hh = Math.sin(Math.PI / 3) * a; // half hex height
+    this.hexTileW = 3 * a;
+    this.hexTileH = 2 * hh;
+    const c = document.createElement('canvas');
+    c.width = Math.round(this.hexTileW);
+    c.height = Math.round(this.hexTileH);
+    const ctx = c.getContext('2d');
+    if (!ctx) return null;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    // Flat-top hexes: columns 1.5a apart, odd columns shifted half a row.
+    // Drawing every hex touching the tile keeps the pattern seamless.
+    for (let cx = -1; cx <= 2; cx++) {
+      for (let cy = -1; cy <= 2; cy++) {
+        const hx = cx * 1.5 * a;
+        const hy = cy * 2 * hh + (((cx % 2) + 2) % 2) * hh;
+        for (let i = 0; i <= 6; i++) {
+          const ang = (i / 6) * TAU;
+          const x = hx + Math.cos(ang) * a;
+          const y = hy + Math.sin(ang) * a;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+      }
+    }
+    ctx.stroke();
+    return ctx.createPattern(c, 'repeat');
   }
 
   render(ctx: CanvasRenderingContext2D, camX: number, camY: number, w: number, h: number, time: number): void {
+    const t = this.theme;
+
     // Base
     const g = ctx.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, '#070a16');
-    g.addColorStop(0.5, '#05070f');
-    g.addColorStop(1, '#080714');
+    g.addColorStop(0, t.gradient[0]);
+    g.addColorStop(0.5, t.gradient[1]);
+    g.addColorStop(1, t.gradient[2]);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h);
 
@@ -50,20 +123,30 @@ export class Background {
     ctx.globalAlpha = 1;
 
     // Grid, 1:1 with world (grounds the sense of movement)
-    ctx.strokeStyle = 'rgba(70, 110, 210, 0.09)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    const ox = -(camX % GRID);
-    const oy = -(camY % GRID);
-    for (let x = ox; x < w; x += GRID) {
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, h);
+    if (t.gridStyle === 'hex' && this.hexPattern) {
+      const ox = -(((camX % this.hexTileW) + this.hexTileW) % this.hexTileW);
+      const oy = -(((camY % this.hexTileH) + this.hexTileH) % this.hexTileH);
+      ctx.save();
+      ctx.translate(ox, oy);
+      ctx.fillStyle = this.hexPattern;
+      ctx.fillRect(-ox, -oy, w, h);
+      ctx.restore();
+    } else {
+      ctx.strokeStyle = t.grid;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      const ox = -(camX % GRID);
+      const oy = -(camY % GRID);
+      for (let x = ox; x < w; x += GRID) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+      }
+      for (let y = oy; y < h; y += GRID) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+      }
+      ctx.stroke();
     }
-    for (let y = oy; y < h; y += GRID) {
-      ctx.moveTo(0, y);
-      ctx.lineTo(w, y);
-    }
-    ctx.stroke();
   }
 
   /** Deterministic sprite placement per world-space cell with parallax factor. */

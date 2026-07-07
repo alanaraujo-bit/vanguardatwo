@@ -1,10 +1,17 @@
 import { Pool, swapRemove } from '../core/pool';
 import { chance, clamp, damp, dist2, len, rand, randInt, TAU } from '../core/utils';
-import { drawSprite, glowDot, shapeSprite, DART_POINTS, type ShapePoints, type Sprite } from '../fx/sprites';
+import { drawSprite, glowDot, shapeSprite, DART_POINTS, QUEEN_POINTS, STINGER_POINTS, type ShapePoints, type Sprite } from '../fx/sprites';
 import { BAL } from './balance';
 import type { World } from './world';
 
-export type EnemyKind = 'drone' | 'dart' | 'splitter' | 'mini' | 'wasp' | 'tank' | 'boss';
+export type EnemyKind =
+  | 'drone' | 'dart' | 'splitter' | 'mini' | 'wasp' | 'tank' | 'boss'
+  | 'larva' | 'spore' | 'stinger' | 'weaver' | 'beetle' | 'queen';
+
+/** Boss-class units: fill the boss HP bar, gate wave progression, drop boss loot. */
+export function isBossKind(kind: EnemyKind): boolean {
+  return kind === 'boss' || kind === 'queen';
+}
 
 export interface Spec {
   hp: number;
@@ -25,6 +32,13 @@ export const SPECS: Record<EnemyKind, Spec> = {
   wasp:     { hp: 26,  speed: 74,  dmg: 8,  radius: 11, xp: 2, score: 30,  color: '#f368e0' },
   tank:     { hp: 115, speed: 30,  dmg: 18, radius: 22, xp: 4, score: 50,  color: '#ff3838' },
   boss:     { hp: 520, speed: 58,  dmg: 24, radius: 42, xp: 25, score: 500, color: '#ff2e63' },
+  // — Setor 2: A Colmeia —
+  larva:    { hp: 12,  speed: 112, dmg: 6,  radius: 8,  xp: 1, score: 12,  color: '#c8ff4d' },
+  spore:    { hp: 24,  speed: 40,  dmg: 9,  radius: 13, xp: 2, score: 22,  color: '#7dff62' },
+  stinger:  { hp: 17,  speed: 96,  dmg: 10, radius: 10, xp: 2, score: 28,  color: '#ffb02e' },
+  weaver:   { hp: 32,  speed: 72,  dmg: 8,  radius: 12, xp: 2, score: 34,  color: '#3dffc4' },
+  beetle:   { hp: 135, speed: 27,  dmg: 20, radius: 23, xp: 5, score: 60,  color: '#ff6b35' },
+  queen:    { hp: 640, speed: 52,  dmg: 26, radius: 46, xp: 30, score: 750, color: '#e84dff' },
 };
 
 interface ShapeOpts { sides?: number; points?: ShapePoints; rotate?: number; innerDetail?: boolean; }
@@ -38,13 +52,30 @@ export const ENEMY_SHAPE_OPTS: Record<EnemyKind, ShapeOpts> = {
   wasp: { sides: 4 },
   tank: { sides: 6, innerDetail: true },
   boss: { sides: 8, innerDetail: true },
+  larva: { sides: 3 },
+  spore: { sides: 9, innerDetail: true },
+  stinger: { points: STINGER_POINTS },
+  weaver: { sides: 5, innerDetail: true },
+  beetle: { sides: 7, rotate: Math.PI / 7, innerDetail: true },
+  queen: { points: QUEEN_POINTS, innerDetail: true },
 };
 
-// Boss phases
+// Colosso phases
 const P_CHASE = 0;
 const P_VOLLEY = 1;
 const P_TELEGRAPH = 2;
 const P_DASH = 3;
+
+// Rainha phases (deliberately no overlap with the Colosso's kit)
+const Q_CHASE = 0;
+const Q_SPIRAL = 1;
+const Q_RING = 2;
+const Q_SUMMON = 3;
+
+// Stinger lunge sub-states (stored in `phase`)
+const ST_SEEK = 0;
+const ST_WINDUP = 1;
+const ST_LUNGE = 2;
 
 export class Enemy {
   kind: EnemyKind = 'drone';
@@ -176,7 +207,7 @@ export class Enemies {
     e.volleys = 0;
     e.dead = false;
     this.list.push(e);
-    if (kind === 'boss') this.boss = e;
+    if (isBossKind(kind)) this.boss = e;
     return e;
   }
 
@@ -281,6 +312,7 @@ export class Enemies {
     switch (e.kind) {
       case 'drone':
       case 'mini':
+      case 'larva':
         e.vx += (nx * e.speed - e.vx) * k;
         e.vy += (ny * e.speed - e.vy) * k;
         e.rot = Math.atan2(e.vy, e.vx) + Math.PI / 2;
@@ -326,8 +358,85 @@ export class Enemies {
         }
         break;
       }
+      case 'spore': {
+        // Slow drifting pod, bobbing sideways — the threat is its death burst.
+        const bob = Math.sin(e.t * 2.2 + e.seed) * 26;
+        e.vx += ((nx * e.speed - ny * bob) - e.vx) * damp(2.2, dt);
+        e.vy += ((ny * e.speed + nx * bob) - e.vy) * damp(2.2, dt);
+        e.rot += dt * (0.8 + Math.sin(e.seed) * 0.4);
+        break;
+      }
+      case 'stinger':
+        // Approach, freeze for a telegraphed beat, then lunge like a hornet.
+        switch (e.phase) {
+          case ST_SEEK:
+            e.vx += (nx * e.speed - e.vx) * damp(5, dt);
+            e.vy += (ny * e.speed - e.vy) * damp(5, dt);
+            e.rot = Math.atan2(dy, dx);
+            e.fireT -= dt;
+            if (e.fireT <= 0 && d < 300) {
+              e.phase = ST_WINDUP;
+              e.phaseT = 0;
+            }
+            break;
+          case ST_WINDUP:
+            e.vx *= 1 - Math.min(1, 8 * dt);
+            e.vy *= 1 - Math.min(1, 8 * dt);
+            e.rot = Math.atan2(dy, dx);
+            e.flash = 0.05; // warning shimmer
+            if (e.phaseT > 0.42) {
+              e.phase = ST_LUNGE;
+              e.phaseT = 0;
+              e.vx = nx * 520;
+              e.vy = ny * 520;
+              world.audio.play('lunge');
+            }
+            break;
+          case ST_LUNGE:
+            if (e.phaseT > 0.34) {
+              e.phase = ST_SEEK;
+              e.fireT = rand(2.3, 3.3);
+            }
+            break;
+        }
+        e.phaseT += dt;
+        break;
+      case 'weaver': {
+        // Orbits at mid range weaving a slow circle, spitting 3-shot fans.
+        const spin = Math.sin(e.seed) >= 0 ? 1 : -1;
+        let tx = -ny * spin * e.speed;
+        let ty = nx * spin * e.speed;
+        if (d > 250) {
+          tx += nx * e.speed * 0.9;
+          ty += ny * e.speed * 0.9;
+        } else if (d < 170) {
+          tx -= nx * e.speed * 0.9;
+          ty -= ny * e.speed * 0.9;
+        }
+        e.vx += (tx - e.vx) * damp(4, dt);
+        e.vy += (ty - e.vy) * damp(4, dt);
+        e.rot += dt * 1.6 * spin;
+        e.fireT -= dt;
+        if (e.fireT <= 0 && d < 360 && !p.dead) {
+          e.fireT = rand(2.6, 3.4);
+          const aim = Math.atan2(dy, dx);
+          for (let i = -1; i <= 1; i++) {
+            world.enemyShots.spawn(e.x, e.y, aim + i * 0.26, 175, e.dmg * 0.7);
+          }
+          world.audio.play('spit');
+        }
+        break;
+      }
+      case 'beetle':
+        e.vx += (nx * e.speed - e.vx) * damp(1.8, dt);
+        e.vy += (ny * e.speed - e.vy) * damp(1.8, dt);
+        e.rot -= dt * 0.4;
+        break;
       case 'boss':
         this.steerBoss(e, dt, world, nx, ny, d);
+        break;
+      case 'queen':
+        this.steerQueen(e, dt, world, nx, ny);
         break;
     }
   }
@@ -389,12 +498,97 @@ export class Enemies {
     }
   }
 
+  /**
+   * Hive Queen: never dashes. She cycles pursuit → rotating spiral streams →
+   * expanding orb rings → summoning her brood, accelerating when enraged.
+   */
+  private steerQueen(e: Enemy, dt: number, world: World, nx: number, ny: number): void {
+    e.rot += dt * 0.45;
+    e.phaseT += dt;
+    const enrage = e.hp < e.maxHp * 0.35 ? 0.72 : 1;
+
+    switch (e.phase) {
+      case Q_CHASE:
+        e.vx += (nx * e.speed - e.vx) * damp(2.2, dt);
+        e.vy += (ny * e.speed - e.vy) * damp(2.2, dt);
+        if (e.phaseT > 3 * enrage) {
+          e.phase = Q_SPIRAL;
+          e.phaseT = 0;
+          e.fireT = 0;
+        }
+        break;
+      case Q_SPIRAL: {
+        e.vx *= 1 - Math.min(1, 4 * dt);
+        e.vy *= 1 - Math.min(1, 4 * dt);
+        e.fireT -= dt;
+        if (e.fireT <= 0) {
+          e.fireT = 0.085;
+          const arms = enrage < 1 ? 3 : 2;
+          const base = e.seed + e.phaseT * 3.4;
+          for (let i = 0; i < arms; i++) {
+            const a = base + (i / arms) * TAU;
+            world.enemyShots.spawn(e.x + Math.cos(a) * e.radius, e.y + Math.sin(a) * e.radius, a, 120, e.dmg * 0.5);
+          }
+          world.audio.play('shotE');
+        }
+        if (e.phaseT > 2.4) {
+          e.phase = Q_RING;
+          e.phaseT = 0;
+          e.volleys = 0;
+        }
+        break;
+      }
+      case Q_RING: {
+        e.vx *= 1 - Math.min(1, 5 * dt);
+        e.vy *= 1 - Math.min(1, 5 * dt);
+        const due = e.volleys === 0 ? 0.4 : 1.1;
+        if (e.volleys < 2 && e.phaseT > due) {
+          e.volleys++;
+          const count = 14;
+          const offset = rand(0, TAU);
+          for (let i = 0; i < count; i++) {
+            const a = offset + (i / count) * TAU;
+            world.enemyShots.spawn(e.x + Math.cos(a) * e.radius, e.y + Math.sin(a) * e.radius, a, 95, e.dmg * 0.55);
+          }
+          world.audio.play('spit');
+        }
+        if (e.phaseT > 1.6 * enrage) {
+          e.phase = Q_SUMMON;
+          e.phaseT = 0;
+          e.volleys = 0;
+        }
+        break;
+      }
+      case Q_SUMMON:
+        e.vx *= 1 - Math.min(1, 5 * dt);
+        e.vy *= 1 - Math.min(1, 5 * dt);
+        if (e.volleys === 0 && e.phaseT > 0.5) {
+          e.volleys = 1;
+          const hpMul = e.maxHp / SPECS.queen.hp;
+          const dmgMul = e.dmg / SPECS.queen.dmg;
+          for (let i = 0; i < 3; i++) {
+            const a = rand(0, TAU);
+            this.pendingSpawn.push({ kind: 'larva', x: e.x + Math.cos(a) * e.radius, y: e.y + Math.sin(a) * e.radius, hpMul, dmgMul });
+          }
+          const sa = rand(0, TAU);
+          this.pendingSpawn.push({ kind: 'spore', x: e.x + Math.cos(sa) * e.radius, y: e.y + Math.sin(sa) * e.radius, hpMul, dmgMul });
+          world.particles.ring(e.x, e.y, SPECS.queen.color, 10, 320, 0.45, 4);
+          world.audio.play('summon');
+        }
+        if (e.phaseT > 1.3 * enrage) {
+          e.phase = Q_CHASE;
+          e.phaseT = 0;
+        }
+        break;
+    }
+  }
+
   damage(e: Enemy, amount: number, crit: boolean, kx: number, ky: number, world: World): void {
     if (e.dead) return;
     e.hp -= amount;
     e.flash = 0.09;
-    // Heavy units and the boss resist knockback.
-    const resist = e.kind === 'tank' ? 0.35 : e.kind === 'boss' ? 0.08 : 1;
+    // Heavy units and bosses resist knockback.
+    const resist = e.kind === 'tank' || e.kind === 'beetle' ? 0.35 : isBossKind(e.kind) ? 0.08 : 1;
     e.kvx += kx * resist;
     e.kvy += ky * resist;
     world.floaters.spawn(e.x, e.y - e.radius - 4, String(Math.round(amount)), {
@@ -421,13 +615,24 @@ export class Enemies {
     if (big) world.shake(8);
 
     // Loot
+    const heavy = e.kind === 'tank' || e.kind === 'beetle';
     world.pickups.spawnGems(e.x, e.y, e.xp);
-    if (e.kind === 'boss') {
+    if (isBossKind(e.kind)) {
       world.pickups.spawnCoins(e.x, e.y, randInt(BAL.drops.bossCoins[0], BAL.drops.bossCoins[1]));
       world.pickups.spawnHeart(e.x, e.y);
     } else {
-      if (chance(BAL.drops.coinChance)) world.pickups.spawnCoins(e.x, e.y, e.kind === 'tank' ? 3 : 1);
-      if (e.kind === 'tank' && chance(BAL.drops.heartChanceTank)) world.pickups.spawnHeart(e.x, e.y);
+      if (chance(BAL.drops.coinChance)) world.pickups.spawnCoins(e.x, e.y, heavy ? 3 : 1);
+      if (heavy && chance(BAL.drops.heartChanceTank)) world.pickups.spawnHeart(e.x, e.y);
+    }
+
+    // Spores retaliate: a radial burst of slow orbs punishes point-blank kills.
+    if (e.kind === 'spore') {
+      const offset = rand(0, TAU);
+      for (let i = 0; i < 6; i++) {
+        const a = offset + (i / 6) * TAU;
+        world.enemyShots.spawn(e.x, e.y, a, 140, e.dmg * 0.7);
+      }
+      world.audio.play('burst');
     }
 
     if (e.kind === 'splitter') {
@@ -452,7 +657,7 @@ export class Enemies {
     for (const e of this.list) {
       if (e.dead) continue;
       const sprite = this.sprites.get(e.kind)!;
-      const scale = e.kind === 'boss' ? 1 + Math.sin(time * 4) * 0.04 : 1;
+      const scale = isBossKind(e.kind) ? 1 + Math.sin(time * 4) * 0.04 : 1;
       drawSprite(ctx, sprite, e.x, e.y, e.rot, scale);
       if (e.flash > 0) {
         drawSprite(ctx, this.flashes.get(e.kind)!, e.x, e.y, e.rot, scale, clamp(e.flash / 0.09, 0, 1));

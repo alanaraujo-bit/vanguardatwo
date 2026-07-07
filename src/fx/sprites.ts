@@ -169,3 +169,15 @@ export const BLADE_POINTS: ShapePoints = [
 export const GEM_POINTS: ShapePoints = [
   [0, -1.1], [0.7, 0], [0, 1.1], [-0.7, 0],
 ];
+
+/** Hive stinger: barbed dart with swept-back wings, pointing +X. */
+export const STINGER_POINTS: ShapePoints = [
+  [1.25, 0], [-0.1, 0.38], [-0.8, 0.78], [-0.45, 0], [-0.8, -0.78], [-0.1, -0.38],
+];
+
+/** Hive queen: a 12-point crown star. */
+export const QUEEN_POINTS: ShapePoints = Array.from({ length: 12 }, (_, i) => {
+  const a = (i / 12) * Math.PI * 2 - Math.PI / 2;
+  const r = i % 2 === 0 ? 1.05 : 0.62;
+  return [Math.cos(a) * r, Math.sin(a) * r] as const;
+});

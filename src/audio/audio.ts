@@ -1,7 +1,8 @@
 export type SfxName =
   | 'shoot' | 'hit' | 'die' | 'dieBig' | 'gem' | 'coin' | 'heart' | 'hurt'
   | 'level' | 'pick' | 'nova' | 'blade' | 'shotE' | 'wave' | 'warn' | 'bossDie'
-  | 'tap' | 'confirm' | 'deny' | 'buy' | 'over' | 'record';
+  | 'tap' | 'confirm' | 'deny' | 'buy' | 'over' | 'record'
+  | 'spit' | 'lunge' | 'burst' | 'summon' | 'sector';
 
 interface ToneOptions {
   f0: number;
@@ -26,6 +27,7 @@ interface NoiseOptions {
 /** Minimum re-trigger gap per effect, so rapid fire never becomes noise soup. */
 const THROTTLE: Partial<Record<SfxName, number>> = {
   shoot: 0.045, hit: 0.03, die: 0.04, gem: 0.03, blade: 0.09, shotE: 0.06, coin: 0.03,
+  spit: 0.07, lunge: 0.08, burst: 0.06,
 };
 
 /**
@@ -249,6 +251,35 @@ export class AudioEngine {
         [523, 659, 784, 1047, 1319].forEach((f, i) => {
           this.tone({ f0: f, dur: 0.18, vol: 0.12, when: this.ctx!.currentTime + i * 0.09 });
         });
+        break;
+      case 'spit':
+        // Wet organic zap — the hive's answer to 'shotE'.
+        this.tone({ f0: 520 * p, f1: 190, type: 'sawtooth', dur: 0.09, vol: 0.05 });
+        this.noiseHit({ dur: 0.05, vol: 0.03, from: 1400, to: 500, filter: 'bandpass', q: 2 });
+        break;
+      case 'lunge':
+        // Rising whoosh for the stinger's dash.
+        this.tone({ f0: 170, f1: 460, type: 'triangle', dur: 0.16, vol: 0.08 });
+        this.noiseHit({ dur: 0.14, vol: 0.08, from: 600, to: 3200, filter: 'bandpass', q: 1.2 });
+        break;
+      case 'burst':
+        // Spore pod rupturing into a ring of orbs.
+        this.tone({ f0: 300 * p, f1: 68, type: 'sawtooth', dur: 0.2, vol: 0.11 });
+        this.noiseHit({ dur: 0.18, vol: 0.11, from: 2800, to: 320 });
+        break;
+      case 'summon':
+        // The Queen calling her brood: eerie parallel rise.
+        this.tone({ f0: 220, f1: 470, type: 'triangle', dur: 0.34, vol: 0.1 });
+        this.tone({ f0: 330, f1: 700, type: 'triangle', dur: 0.34, vol: 0.07, when: this.ctx.currentTime + 0.06 });
+        this.vibrate([30, 40, 30]);
+        break;
+      case 'sector':
+        // Sector-transition sting: a big riser chord plus sweeping air.
+        [130.81, 196, 261.63, 392].forEach((f, i) => {
+          this.tone({ f0: f, dur: 0.55, vol: 0.11, type: 'sawtooth', attack: 0.05, when: this.ctx!.currentTime + i * 0.09 });
+        });
+        this.noiseHit({ dur: 0.7, vol: 0.09, from: 400, to: 6000, filter: 'bandpass', q: 1 });
+        this.vibrate([30, 50, 80]);
         break;
     }
   }

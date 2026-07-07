@@ -1,11 +1,11 @@
 import { drawSprite, shapeSprite, type Sprite } from '../fx/sprites';
 import { BAL } from './balance';
-import { SPECS as ENEMY_SPECS, ENEMY_SHAPE_OPTS, type EnemyKind } from './enemies';
+import { SPECS as ENEMY_SPECS, ENEMY_SHAPE_OPTS, isBossKind, type EnemyKind } from './enemies';
 import { META_DEFS } from './meta';
 import { COIN_SHAPE, GEM_SHAPE, MAX_GEMS, heartSprite } from './pickups';
 import { SHIP_SHAPE } from './player';
+import { firstWaveOf, SECTOR_LEN, SECTORS } from './sectors';
 import { paintIcon, UPGRADE_DEFS } from './upgrades';
-import { COMPOSITION } from './waves';
 
 /**
  * The in-game Codex: a read-only reference of everything that exists in
@@ -126,19 +126,65 @@ const ENEMY_LORE: Record<EnemyKind, EnemyLore> = {
   },
   boss: {
     name: 'Colosso da Ruína',
-    tagline: `O ápice da invasão — aparece a cada ${BAL.wave.bossEvery} ondas.`,
+    tagline: 'O chefe do Campo da Ruína — barra as ondas 5 e 10.',
     lore: 'Uma fusão titânica de tudo que a Ruína já consumiu. Sua chegada é anunciada antes mesmo de ele pisar no campo de batalha.',
     tactic: 'Alterna entre perseguir, parar para disparar rajadas circulares de projéteis (aproveite para descarregar dano nele) e uma investida de altíssima velocidade avisada por um brilho de alerta — desvie assim que perceber o aviso. Abaixo de 35% de vida ele entra em fúria e todas as fases ficam mais rápidas.',
   },
+  larva: {
+    name: 'Larva',
+    tagline: 'Cria da Colmeia — pequena, incansável e sempre em bando.',
+    lore: 'A forma mais jovem da Colmeia. Nasce às dezenas nas paredes vivas do setor e avança em linha reta, guiada apenas pela fome.',
+    tactic: 'Individualmente inofensiva, mas a Colmeia nunca envia uma só — e a Rainha invoca mais durante a luta. Mantenha-se em movimento e deixe a mira automática limpar o enxame.',
+  },
+  spore: {
+    name: 'Esporo',
+    tagline: 'Casulo flutuante que estoura numa roda de orbes ao morrer.',
+    lore: 'Um casulo inchado de gás vivo que deriva lentamente até o alvo. A morte é seu próprio ataque: a casca rompe e espalha orbes tóxicos em círculo.',
+    tactic: 'Nunca o destrua colado em você. Os seis orbes saem em círculo e são lentos — abata-o de longe e passe pelos vãos entre eles.',
+  },
+  stinger: {
+    name: 'Ferrão',
+    tagline: 'Caçador que congela por um instante... e dá o bote.',
+    lore: 'O predador da Colmeia. Aproxima-se em voo direto, trava no ar por um instante — e cruza o campo numa investida fulminante.',
+    tactic: 'O brilho branco é o aviso do bote: quando ele congelar, mova-se para o lado, perpendicular à linha entre vocês. A investida não faz curva.',
+  },
+  weaver: {
+    name: 'Tecelã',
+    tagline: 'Orbita o alvo cuspindo leques de três orbes.',
+    lore: 'Tece círculos pacientes ao redor da presa, mantendo distância enquanto cospe leques de ácido cristalizado.',
+    tactic: 'O leque abre com a distância: perto dela os três orbes acertam juntos, longe há espaço para passar entre eles. Elimine-a antes que o círculo dela se feche sobre você.',
+  },
+  beetle: {
+    name: 'Carrapaço',
+    tagline: 'Muralha viva — blindado, pesado e implacável.',
+    lore: 'Um besouro colossal de casco septenário, criado para proteger a Rainha. Quase imune a recuo, empurra o campo de batalha na sua direção passo a passo.',
+    tactic: 'Trate-o como o Tanque da Ruína: nunca troque golpes de perto. É a melhor fonte de moedas e corações da Colmeia — priorize-o quando precisar de cura.',
+  },
+  queen: {
+    name: 'Rainha da Colmeia',
+    tagline: 'A mãe do enxame — chefe da Colmeia, ondas 15 e 20.',
+    lore: 'O coração vivo da Colmeia. Não investe como o Colosso: ela tece espirais rotativas de orbes, fecha anéis ao redor da presa e chama as crias para lutarem por ela.',
+    tactic: 'Três armas, três respostas: na espiral rotativa, ande em círculo acompanhando a rotação; nos anéis, atravesse pelos vãos antes que fechem; na invocação, elimine as crias antes que o enxame cresça. Abaixo de 35% de vida ela se enfurece — tudo acelera e a espiral ganha um braço extra.',
+  },
 };
 
-const ENEMY_ORDER: readonly EnemyKind[] = ['drone', 'dart', 'splitter', 'mini', 'wasp', 'tank', 'boss'];
+const ENEMY_ORDER: readonly EnemyKind[] = [
+  'drone', 'dart', 'splitter', 'mini', 'wasp', 'tank', 'boss',
+  'larva', 'spore', 'stinger', 'weaver', 'beetle', 'queen',
+];
 
 function waveAvailability(kind: EnemyKind): string {
-  if (kind === 'boss') return `Aparece a cada ${BAL.wave.bossEvery} ondas`;
+  if (isBossKind(kind)) {
+    const idx = SECTORS.findIndex((s) => s.boss.kind === kind);
+    const first = idx * SECTOR_LEN + BAL.wave.bossEvery;
+    return `Chefe do Setor ${idx + 1} — ondas ${first} e ${idx * SECTOR_LEN + SECTOR_LEN}`;
+  }
   if (kind === 'mini') return 'Só nasce de um Fragmentador destruído';
-  const comp = COMPOSITION.find((c) => c.kind === kind);
-  return comp ? `Aparece a partir da onda ${comp.from}` : '—';
+  const found = firstWaveOf(kind);
+  if (!found) return '—';
+  return found.sector === 1
+    ? `Aparece a partir da onda ${found.wave}`
+    : `Setor ${found.sector} — a partir da onda ${found.wave}`;
 }
 
 const enemyEntries: CodexEntry[] = ENEMY_ORDER.map((kind) => {
@@ -157,12 +203,27 @@ const enemyEntries: CodexEntry[] = ENEMY_ORDER.map((kind) => {
   if (kind === 'wasp') {
     stats.push({ label: 'Dano do disparo à distância', value: String(Math.round(spec.dmg * 0.85)) });
   }
-  if (kind === 'tank') {
+  if (kind === 'weaver') {
+    stats.push({ label: 'Dano por orbe do leque', value: String(Math.round(spec.dmg * 0.7)) });
+  }
+  if (kind === 'spore') {
+    stats.push({ label: 'Explosão ao morrer', value: `6 orbes (dano ${Math.round(spec.dmg * 0.7)} cada)` });
+  }
+  if (kind === 'stinger') {
+    stats.push({ label: 'Velocidade da investida', value: '520' });
+  }
+  if (kind === 'tank' || kind === 'beetle') {
     stats.push({ label: 'Chance de soltar coração', value: pct(BAL.drops.heartChanceTank) });
   }
   if (kind === 'boss') {
     stats.push({ label: 'Vida na 1ª aparição (onda 5)', value: String(Math.round(BAL.wave.bossHp(5))) });
     stats.push({ label: 'Dano por projétil da rajada', value: String(Math.round(spec.dmg * 0.6)) });
+    stats.push({ label: 'Recompensa ao cair', value: `${BAL.drops.bossCoins[0]}–${BAL.drops.bossCoins[1]} moedas + 1 coração` });
+  }
+  if (kind === 'queen') {
+    stats.push({ label: 'Vida na 1ª aparição (onda 15)', value: String(Math.round((BAL.wave.bossHp(15) / 520) * spec.hp)) });
+    stats.push({ label: 'Dano por orbe da espiral', value: String(Math.round(spec.dmg * 0.5)) });
+    stats.push({ label: 'Invocação', value: '3 Larvas + 1 Esporo por ciclo' });
     stats.push({ label: 'Recompensa ao cair', value: `${BAL.drops.bossCoins[0]}–${BAL.drops.bossCoins[1]} moedas + 1 coração` });
   }
 
@@ -263,14 +324,14 @@ const resourceEntries: CodexEntry[] = [
     name: 'Moeda',
     tagline: 'Moeda permanente — gasta no Hangar entre partidas.',
     lore: 'O único recurso que sobrevive à sua destruição. Tudo que for acumulado numa partida continua disponível no Hangar do menu principal.',
-    tactic: 'Tanques têm mais chance de derrubar moedas do que inimigos comuns, e o Colosso da Ruína sempre solta um bom punhado ao cair. Vale a pena buscar sobreviver mais ondas: o bônus por onda alcançada costuma valer mais que as moedas soltas em campo.',
+    tactic: 'Unidades pesadas (Tanque, Carrapaço) têm mais chance de derrubar moedas do que inimigos comuns, e todo chefe solta um bom punhado ao cair. Vale a pena buscar sobreviver mais ondas: o bônus por onda alcançada costuma valer mais que as moedas soltas em campo.',
     accent: '#ffc857',
     icon: spriteIcon(shapeSprite(COIN_SHAPE), 48),
     stats: [
       { label: 'Efeito', value: 'Compra melhorias permanentes no Hangar' },
       { label: 'Chance de queda (inimigo comum)', value: pct(BAL.drops.coinChance) },
-      { label: 'Queda do Tanque', value: '3 moedas' },
-      { label: 'Queda do Colosso da Ruína', value: `${BAL.drops.bossCoins[0]}–${BAL.drops.bossCoins[1]} moedas` },
+      { label: 'Queda de unidade pesada', value: '3 moedas' },
+      { label: 'Queda de chefe', value: `${BAL.drops.bossCoins[0]}–${BAL.drops.bossCoins[1]} moedas` },
       { label: 'Bônus por onda (fim de partida)', value: `${BAL.score.coinsPerWave} moedas por onda alcançada` },
     ],
   },
@@ -279,13 +340,13 @@ const resourceEntries: CodexEntry[] = [
     name: 'Coração',
     tagline: 'Cura instantânea — recupera parte da sua vida máxima.',
     lore: 'Núcleo de energia vital deixado por inimigos mais resistentes ao caírem. Restaura parte da sua vida no instante em que é coletado.',
-    tactic: 'Guarde de olho na vida do Colosso da Ruína: ele sempre solta um coração ao ser destruído, então não há problema em arriscar um pouco mais perto do fim da luta.',
+    tactic: 'Fique de olho na vida do chefe do setor: todo chefe solta um coração ao ser destruído, então não há problema em arriscar um pouco mais perto do fim da luta.',
     accent: '#ff5d73',
     icon: spriteIcon(heartSprite(), 48),
     stats: [
       { label: 'Efeito', value: 'Cura 25% da vida máxima' },
-      { label: 'Queda do Tanque', value: pct(BAL.drops.heartChanceTank) },
-      { label: 'Queda do Colosso da Ruína', value: 'Sempre' },
+      { label: 'Queda de unidade pesada (Tanque, Carrapaço)', value: pct(BAL.drops.heartChanceTank) },
+      { label: 'Queda de chefe', value: 'Sempre' },
     ],
   },
 ];
@@ -294,11 +355,28 @@ const resourceEntries: CodexEntry[] = [
 
 const systemEntries: CodexEntry[] = [
   {
+    id: 'sectors',
+    name: 'Setores',
+    tagline: `A campanha — a cada ${SECTOR_LEN} ondas, um mundo novo.`,
+    lore: 'A cada dez ondas a partida viaja para um novo setor: outro cenário, outra trilha sonora, outros inimigos e um chefe próprio. O Campo da Ruína é só a porta de entrada — na onda 11, a Colmeia acorda.',
+    tactic: 'Cada setor tem seu próprio ecossistema de ameaças; as táticas que funcionavam no anterior podem não bastar. Quando a rota chega ao fim, ela recomeça do início — mas os inimigos voltam muito mais fortes.',
+    accent: '#9dff2e',
+    icon: paintIcon('thrusters', '#9dff2e', 48),
+    stats: [
+      { label: 'Duração de um setor', value: `${SECTOR_LEN} ondas` },
+      ...SECTORS.map((s, i) => ({
+        label: `Setor ${i + 1}`,
+        value: `${s.name} — chefe: ${s.boss.name}`,
+      })),
+      { label: 'Depois do último setor', value: 'A rota recomeça, cada vez mais letal' },
+    ],
+  },
+  {
     id: 'waves',
     name: 'Ondas',
-    tagline: `Cada onda dura ${BAL.wave.duration}s e a Ruína fica mais forte a cada uma.`,
-    lore: 'A Ruína ataca em ondas cronometradas. A cada onda, mais inimigos aparecem, mais rápido, com mais vida e mais dano — e novos tipos de inimigo entram em cena conforme a run avança.',
-    tactic: `A cada ${BAL.wave.bossEvery} ondas, a onda regular é substituída por um confronto contra o Colosso da Ruína, que precisa ser destruído para a progressão continuar.`,
+    tagline: `Cada onda dura ${BAL.wave.duration}s e o inimigo fica mais forte a cada uma.`,
+    lore: 'O ataque vem em ondas cronometradas. A cada onda, mais inimigos aparecem, mais rápido, com mais vida e mais dano — e novos tipos entram em cena conforme a run avança pelos setores.',
+    tactic: `A cada ${BAL.wave.bossEvery} ondas, a onda regular é substituída por um confronto contra o chefe do setor atual, que precisa ser destruído para a progressão continuar.`,
     accent: '#35f0ff',
     icon: paintIcon('rate', '#35f0ff', 48),
     stats: [
@@ -385,7 +463,7 @@ export const CODEX_INTRO = 'Referência completa de tudo que existe em Vanguarda
 
 export const CODEX: readonly CodexCategory[] = [
   { id: 'ship', label: 'Nave', intro: 'A única unidade ainda em campo contra a Ruína.', entries: [shipEntry] },
-  { id: 'enemies', label: 'A Ruína', intro: 'Toda ameaça que você vai enfrentar, da mais comum ao Colosso.', entries: enemyEntries },
+  { id: 'enemies', label: 'Ameaças', intro: 'Toda ameaça que você vai enfrentar, setor por setor — da Ruína à Colmeia.', entries: enemyEntries },
   { id: 'upgrades', label: 'Combate', intro: 'Melhorias temporárias, escolhidas ao subir de nível durante a partida.', entries: upgradeEntries },
   { id: 'meta', label: 'Hangar', intro: 'Melhorias permanentes, compradas com moedas entre partidas.', entries: metaEntries },
   { id: 'resources', label: 'Recursos', intro: 'Tudo que você coleta no campo de batalha.', entries: resourceEntries },
