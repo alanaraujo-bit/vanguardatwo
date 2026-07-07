@@ -3,6 +3,12 @@ import { clamp, len } from './utils';
 const STICK_RADIUS = 46;
 const DEAD_ZONE = 5;
 
+/** True while the event targets a text field (name entry, login forms). */
+export function isTyping(e: Event): boolean {
+  const t = e.target;
+  return t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA');
+}
+
 /**
  * One-thumb virtual joystick: touch anywhere, drag to move. The origin trails
  * behind the finger when it travels past the stick radius, which keeps the
@@ -61,6 +67,7 @@ export class Input {
     canvas.addEventListener('pointercancel', release);
 
     window.addEventListener('keydown', (e) => {
+      if (isTyping(e)) return;
       this.keys.add(e.code);
     });
     window.addEventListener('keyup', (e) => {

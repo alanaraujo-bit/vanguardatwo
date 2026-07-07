@@ -157,6 +157,21 @@ export class Pickups {
     }
   }
 
+  /** Position of the nearest pickup of a kind (tutorial highlights). */
+  nearestOfKind(kind: PickupKind, x: number, y: number): [number, number] | null {
+    let best: Pickup | null = null;
+    let bestD = Infinity;
+    for (const p of this.active) {
+      if (p.kind !== kind) continue;
+      const d = dist2(x, y, p.x, p.y);
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    return best ? [best.x, best.y] : null;
+  }
+
   render(ctx: CanvasRenderingContext2D, time: number): void {
     for (const p of this.active) {
       const bob = Math.sin(time * 3.4 + p.t) * 2.5;

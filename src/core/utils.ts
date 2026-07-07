@@ -51,6 +51,16 @@ export function hash2(x: number, y: number): number {
   return ((h ^ (h >> 16)) >>> 0) / 4294967296;
 }
 
+/** UUID for run submissions; falls back when crypto.randomUUID is unavailable (Safari < 15.4). */
+export function randomId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  let s = '';
+  for (let i = 0; i < 32; i++) s += Math.floor(Math.random() * 16).toString(16);
+  return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20)}`;
+}
+
 export function fmtTime(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
   const m = Math.floor(s / 60);

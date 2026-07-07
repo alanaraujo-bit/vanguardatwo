@@ -7,6 +7,15 @@ export interface WaveEvents {
   onBossWarn(): void;
 }
 
+/**
+ * What GameScene needs from a wave source. The real run uses WaveDirector;
+ * the guided tutorial swaps in a scripted TutorialDirector.
+ */
+export interface Director {
+  wave: number;
+  update(dt: number, world: World): void;
+}
+
 export interface PoolEntry { kind: EnemyKind; weight: number; from: number; }
 
 /** Which wave each enemy kind starts appearing in — also drives the Codex's "surgimento" line. */
@@ -22,7 +31,7 @@ export const COMPOSITION: readonly PoolEntry[] = [
  * Drives the run's pacing: timed waves with a rising spawn budget, and a
  * boss encounter every few waves that must be defeated to advance.
  */
-export class WaveDirector {
+export class WaveDirector implements Director {
   wave = 1;
   bossActive = false;
 

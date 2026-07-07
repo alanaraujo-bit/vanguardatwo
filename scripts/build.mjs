@@ -1,8 +1,21 @@
 import esbuild from 'esbuild';
-import { cpSync, mkdirSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 
 const serve = process.argv.includes('--serve');
 const outdir = 'dist';
+
+// Load .env (if present) into process.env without adding a dependency.
+// Vercel provides these as real env vars in CI, so the file is dev-only.
+try {
+  for (const line of readFileSync('.env', 'utf8').split('\n')) {
+    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+    if (m && process.env[m[1]] === undefined) {
+      process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+    }
+  }
+} catch {
+  // no .env — fine
+}
 
 rmSync(outdir, { recursive: true, force: true });
 mkdirSync(outdir, { recursive: true });
@@ -18,12 +31,22 @@ const options = {
   minify: !serve,
   target: ['es2020', 'safari14'],
   logLevel: 'info',
+  define: {
+    // Public identifier (not a secret): the Google OAuth client id the login
+    // button uses. Injected at build time; empty string disables the button.
+    __GOOGLE_CLIENT_ID__: JSON.stringify(process.env.GOOGLE_CLIENT_ID ?? ''),
+  },
 };
 
 if (serve) {
   const ctx = await esbuild.context(options);
   await ctx.watch();
-  const { port } = await ctx.serve({ servedir: outdir, host: '127.0.0.1', port: 8137 });
+  // `vercel dev` provides PORT and proxies /api to the serverless functions.
+  const { port } = await ctx.serve({
+    servedir: outdir,
+    host: '127.0.0.1',
+    port: Number(process.env.PORT ?? 8137),
+  });
   console.log(`\n  VANGUARDA rodando em  http://127.0.0.1:${port}\n`);
 } else {
   await esbuild.build(options);

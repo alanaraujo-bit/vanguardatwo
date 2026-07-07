@@ -5,6 +5,10 @@ import { S } from '../i18n/strings';
 import { CODEX, CODEX_INTRO, type CodexCategoryId, type CodexEntry } from '../game/codex';
 import { META_DEFS, metaCost, metaLevel } from '../game/meta';
 import { paintIcon, type UpgradeDef } from '../game/upgrades';
+import { api, ApiError } from '../net/api';
+import { nameError, sanitizeName, NAME_MAX } from '../net/names';
+import type { BoardKind, LeaderboardEntry, ProfileResponse } from '../net/protocol';
+import { session } from '../net/session';
 
 export interface RunStats {
   wave: number;
@@ -12,16 +16,30 @@ export interface RunStats {
   time: number;
   score: number;
   coins: number;
-  newRecord: boolean;
+  records: { wave: boolean; score: boolean; time: boolean; coins: boolean };
 }
 
 export interface UiActions {
   startRun(): void;
+  startTutorial(): void;
   pauseRun(): void;
   resumeRun(): void;
   restartRun(): void;
   quitToMenu(): void;
   applySettings(): void;
+}
+
+interface NamePromptOpts {
+  initial?: string;
+  /** Resolve to an error message to keep the screen open, or null to proceed. */
+  onDone(name: string): Promise<string | null>;
+  onCancel?: () => void;
+}
+
+interface LoginOpts {
+  onDone(): void;
+  /** Present = onboarding: show "continue without account" instead of back. */
+  onSkip?: () => void;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -42,7 +60,13 @@ export class UI {
   private readonly screens = new Map<string, HTMLElement>();
   private pauseBtn: HTMLElement | null = null;
   private tutorial: HTMLElement | null = null;
+  private tutBubble: HTMLElement | null = null;
+  private tutBubbleTitle: HTMLElement | null = null;
+  private tutBubbleSub: HTMLElement | null = null;
+  private tutSkipBtn: HTMLElement | null = null;
   private codexTab: CodexCategoryId = CODEX[0].id;
+  private lbTab: BoardKind = 'wave';
+  private current: string | null = null;
 
   constructor(
     private readonly save: SaveSystem,
@@ -77,15 +101,23 @@ export class UI {
   private open(name: string): void {
     const s = this.screens.get(name);
     if (!s) return;
+    this.current = name;
     requestAnimationFrame(() => requestAnimationFrame(() => s.classList.add('on')));
   }
 
   private close(name: string): void {
     this.screens.get(name)?.classList.remove('on');
+    if (this.current === name) this.current = null;
   }
 
   hideAll(): void {
     for (const s of this.screens.values()) s.classList.remove('on');
+    this.current = null;
+  }
+
+  /** Re-render the main menu if it is what's on screen (login state changed). */
+  refreshMenu(): void {
+    if (this.current === 'menu') this.showMenu();
   }
 
   private coinChip(value: number): HTMLElement {
@@ -123,6 +155,19 @@ export class UI {
     this.hideAll();
     const s = this.screen('menu');
 
+    const top = el('div', 'row header menu-top');
+    top.appendChild(el('div', 'grow'));
+    if (session.authed && session.player) {
+      const acct = this.btn(session.player.name, 'ghost small acct-chip', () => this.showProfile());
+      acct.prepend(el('span', 'acct-dot'));
+      top.appendChild(acct);
+    } else {
+      top.appendChild(this.btn(S.login, 'ghost small', () => {
+        this.showLogin({ onDone: () => this.showMenu() });
+      }));
+    }
+    s.appendChild(top);
+
     s.appendChild(el('div', 'spacer'));
     s.appendChild(el('h1', 'logo', S.title));
     s.appendChild(el('div', 'tagline', S.tagline));
@@ -141,6 +186,7 @@ export class UI {
       this.actions.startRun();
     }));
     col.appendChild(this.btn(S.upgrades, 'ghost', () => this.showShop()));
+    col.appendChild(this.btn(S.ranking, 'ghost', () => this.showLeaderboard()));
     col.appendChild(this.btn(S.codex, 'ghost', () => this.showCodex()));
     col.appendChild(this.btn(S.settings, 'ghost', () => this.showSettings()));
     s.appendChild(col);
@@ -314,6 +360,8 @@ export class UI {
       `${S.runs}: ${this.save.data.runs} · ${S.totalKills}: ${this.save.data.totalKills}`);
     s.appendChild(info);
 
+    s.appendChild(this.btn(S.tutReplay, 'ghost', () => this.actions.startTutorial()));
+
     s.appendChild(this.btn(S.resetData, 'danger', () => {
       this.confirm(S.resetConfirm, () => {
         this.save.reset();
@@ -345,13 +393,13 @@ export class UI {
 
   // ————— confirm dialog —————
 
-  confirm(message: string, onYes: () => void): void {
+  confirm(message: string, onYes: () => void, yesLabel: string = S.resetYes): void {
     const s = this.screen('confirm');
     const panel = el('div', 'panel dialog');
     panel.appendChild(el('p', 'dialog-text', message));
     const row = el('div', 'row gap');
     row.appendChild(this.btn(S.cancel, 'ghost small grow', () => this.close('confirm')));
-    row.appendChild(this.btn(S.resetYes, 'danger small grow', () => {
+    row.appendChild(this.btn(yesLabel, 'danger small grow', () => {
       this.close('confirm');
       onYes();
     }));
@@ -459,8 +507,13 @@ export class UI {
     this.hideGameOverlay();
     const s = this.screen('gameover');
     s.appendChild(el('h2', 'heading gameover-title', S.gameOver));
-    if (stats.newRecord) {
-      s.appendChild(el('div', 'record-badge', S.newRecord));
+    const recordNames: string[] = [];
+    if (stats.records.wave) recordNames.push(S.recordWave);
+    if (stats.records.score) recordNames.push(S.recordScore);
+    if (stats.records.time) recordNames.push(S.recordTime);
+    if (stats.records.coins) recordNames.push(S.recordCoins);
+    if (recordNames.length > 0) {
+      s.appendChild(el('div', 'record-badge', `${S.newRecord} ${recordNames.join(' · ')}`));
     }
 
     const panel = el('div', 'panel results');
@@ -490,9 +543,339 @@ export class UI {
 
     const col = el('div', 'col actions');
     col.appendChild(this.btn(S.playAgain, 'primary', () => this.actions.restartRun()));
+    if (session.authed) {
+      col.appendChild(this.btn(S.viewRanking, 'ghost', () => this.showLeaderboard()));
+    }
     col.appendChild(this.btn(S.menu, 'ghost', () => this.actions.quitToMenu()));
     s.appendChild(col);
     this.open('gameover');
+  }
+
+  // ————— pilot name —————
+
+  showNamePrompt(opts: NamePromptOpts): void {
+    this.hideAll();
+    const s = this.screen('name');
+
+    const panel = el('div', 'panel dialog name-panel');
+    panel.appendChild(el('h2', 'heading', S.nameTitle));
+    panel.appendChild(el('div', 'subheading', S.nameSub));
+
+    const input = el('input', 'input');
+    input.type = 'text';
+    input.maxLength = NAME_MAX;
+    input.placeholder = S.namePlaceholder;
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.value = opts.initial ?? '';
+    panel.appendChild(input);
+
+    const error = el('div', 'input-error');
+    panel.appendChild(error);
+
+    const confirm = this.btn(S.confirmYes, 'primary', () => void submit());
+    const validate = (): string | null => {
+      const err = nameError(sanitizeName(input.value));
+      switch (err) {
+        case 'short': return S.nameTooShort;
+        case 'long': return S.nameTooLong;
+        case 'invalid': return S.nameInvalid;
+        case 'profane': return S.nameProfane;
+        default: return null;
+      }
+    };
+    const refresh = (): void => {
+      const msg = input.value.trim() === '' ? S.nameTooShort : validate();
+      error.textContent = msg && input.value !== '' ? msg : '';
+      confirm.disabled = msg !== null;
+      confirm.classList.toggle('locked', msg !== null);
+    };
+    input.addEventListener('input', refresh);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !confirm.disabled) void submit();
+    });
+
+    let busy = false;
+    const submit = async (): Promise<void> => {
+      if (busy || validate() !== null) return;
+      busy = true;
+      confirm.classList.add('locked');
+      const result = await opts.onDone(sanitizeName(input.value));
+      busy = false;
+      confirm.classList.remove('locked');
+      if (result !== null) error.textContent = result;
+    };
+
+    const row = el('div', 'row gap name-actions');
+    if (opts.onCancel) {
+      row.appendChild(this.btn(S.cancel, 'ghost small grow', opts.onCancel));
+    }
+    confirm.classList.add('grow');
+    row.appendChild(confirm);
+    panel.appendChild(row);
+
+    s.appendChild(panel);
+    refresh();
+    this.open('name');
+    setTimeout(() => input.focus(), 350);
+  }
+
+  // ————— login —————
+
+  showLogin(opts: LoginOpts): void {
+    this.hideAll();
+    const s = this.screen('login');
+
+    const panel = el('div', 'panel dialog login-panel');
+    panel.appendChild(el('h2', 'heading', S.loginTitle));
+    panel.appendChild(el('div', 'subheading', S.loginSub));
+
+    const status = el('div', 'login-status');
+    const wrap = el('div', 'gsi-wrap');
+    this.renderGoogleButton(wrap, status, opts.onDone);
+    panel.appendChild(wrap);
+    panel.appendChild(status);
+
+    const col = el('div', 'col login-actions');
+    if (opts.onSkip) {
+      col.appendChild(this.btn(S.continueGuest, 'ghost', opts.onSkip));
+      panel.appendChild(col);
+      panel.appendChild(el('div', 'subheading login-note', S.loginGuestNote));
+    } else {
+      col.appendChild(this.btn(`‹ ${S.back}`, 'ghost small', () => this.showMenu()));
+      panel.appendChild(col);
+    }
+
+    s.appendChild(panel);
+    this.open('login');
+  }
+
+  private renderGoogleButton(wrap: HTMLElement, status: HTMLElement, onDone: () => void): void {
+    const gsi = window.google?.accounts.id;
+    if (!gsi || typeof __GOOGLE_CLIENT_ID__ === 'undefined' || !__GOOGLE_CLIENT_ID__) {
+      wrap.appendChild(el('div', 'login-unavailable', S.loginUnavailable));
+      return;
+    }
+    gsi.initialize({
+      client_id: __GOOGLE_CLIENT_ID__,
+      callback: (resp) => {
+        status.textContent = S.loginLoading;
+        session.loginWithGoogle(resp.credential)
+          .then(() => {
+            this.audio.play('confirm');
+            status.textContent = '';
+            onDone();
+          })
+          .catch(() => {
+            status.textContent = S.loginError;
+          });
+      },
+    });
+    gsi.renderButton(wrap, {
+      theme: 'filled_black',
+      size: 'large',
+      shape: 'pill',
+      text: 'continue_with',
+      locale: 'pt-BR',
+      width: 280,
+    });
+  }
+
+  // ————— leaderboard —————
+
+  showLeaderboard(): void {
+    this.hideAll();
+    const s = this.screen('leaderboard');
+
+    const header = el('div', 'row header');
+    header.appendChild(this.btn(`‹ ${S.back}`, 'ghost small', () => this.showMenu()));
+    s.appendChild(header);
+
+    s.appendChild(el('h2', 'heading', S.rankTitle));
+
+    const tabs = el('div', 'row codex-tabs lb-tabs');
+    const boards: Array<[BoardKind, string]> = [
+      ['wave', S.rankWave],
+      ['coins', S.rankCoins],
+      ['time', S.rankTime],
+    ];
+    for (const [id, label] of boards) {
+      tabs.appendChild(this.codexTabBtn(label, id === this.lbTab, () => {
+        if (this.lbTab === id) return;
+        this.lbTab = id;
+        this.showLeaderboard();
+      }));
+    }
+    s.appendChild(tabs);
+
+    const list = el('div', 'scroll list lb-list');
+    s.appendChild(list);
+    this.open('leaderboard');
+    void this.loadLeaderboard(list);
+  }
+
+  private async loadLeaderboard(list: HTMLElement): Promise<void> {
+    const board = this.lbTab;
+    list.innerHTML = '';
+    list.appendChild(el('div', 'subheading', S.loading));
+    try {
+      const res = await api.leaderboard(board);
+      if (this.lbTab !== board || !list.isConnected) return;
+      list.innerHTML = '';
+      if (res.entries.length === 0) {
+        list.appendChild(el('div', 'subheading', S.rankEmpty));
+      }
+      const myHandle = session.player?.handle;
+      let meListed = false;
+      res.entries.forEach((entry, i) => {
+        const mine = entry.handle === myHandle;
+        meListed = meListed || mine;
+        list.appendChild(this.lbRow(entry, board, mine, i));
+      });
+      if (session.authed && session.player && res.me && !meListed) {
+        list.appendChild(this.lbRow({
+          rank: res.me.rank,
+          handle: session.player.handle,
+          name: session.player.name,
+          value: res.me.value,
+        }, board, true, res.entries.length));
+      }
+      if (!session.authed) {
+        list.appendChild(this.btn(S.rankGuestCta, 'ghost', () => {
+          this.showLogin({ onDone: () => this.showLeaderboard() });
+        }));
+      }
+    } catch {
+      if (this.lbTab !== board || !list.isConnected) return;
+      list.innerHTML = '';
+      list.appendChild(el('div', 'subheading', S.netError));
+      list.appendChild(this.btn(S.retry, 'ghost small', () => void this.loadLeaderboard(list)));
+    }
+  }
+
+  private lbRow(entry: LeaderboardEntry, board: BoardKind, mine: boolean, i: number): HTMLElement {
+    const row = el('button', `panel lb-row${mine ? ' lb-me' : ''}`);
+    row.style.setProperty('--i', String(Math.min(i, 12)));
+    row.appendChild(el('span', `lb-rank${entry.rank <= 3 ? ' top' : ''}`, `#${entry.rank}`));
+    row.appendChild(el('span', 'grow lb-name', entry.name));
+    if (mine) row.appendChild(el('span', 'chip lb-you', S.rankYou));
+    row.appendChild(el('span', 'lb-value', board === 'time' ? fmtTime(entry.value) : String(entry.value)));
+    row.addEventListener('pointerdown', () => this.audio.play('tap'));
+    row.addEventListener('click', () => this.showProfile(entry.handle, 'leaderboard'));
+    return row;
+  }
+
+  // ————— profile —————
+
+  showProfile(handle?: string, backTo: 'menu' | 'leaderboard' = 'menu'): void {
+    this.hideAll();
+    const s = this.screen('profile');
+    const own = handle === undefined || handle === session.player?.handle;
+    const target = handle ?? session.player?.handle;
+
+    const goBack = (): void => {
+      if (backTo === 'leaderboard') this.showLeaderboard();
+      else this.showMenu();
+    };
+    const header = el('div', 'row header');
+    header.appendChild(this.btn(`‹ ${S.back}`, 'ghost small', goBack));
+    s.appendChild(header);
+
+    s.appendChild(el('h2', 'heading', S.profileTitle));
+
+    const body = el('div', 'scroll list profile-body');
+    s.appendChild(body);
+    this.open('profile');
+
+    if (!target) {
+      body.appendChild(el('div', 'subheading', S.profileNotFound));
+      return;
+    }
+    void this.loadProfile(body, target, own);
+  }
+
+  private async loadProfile(body: HTMLElement, handle: string, own: boolean): Promise<void> {
+    body.appendChild(el('div', 'subheading', S.loading));
+    let profile: ProfileResponse;
+    try {
+      profile = await api.profile(handle);
+    } catch (e) {
+      if (!body.isConnected) return;
+      body.innerHTML = '';
+      const missing = e instanceof ApiError && e.status === 404;
+      body.appendChild(el('div', 'subheading', missing ? S.profileNotFound : S.netError));
+      if (!missing) {
+        body.appendChild(this.btn(S.retry, 'ghost small', () => {
+          body.innerHTML = '';
+          void this.loadProfile(body, handle, own);
+        }));
+      }
+      return;
+    }
+    if (!body.isConnected) return;
+    body.innerHTML = '';
+
+    const head = el('div', 'panel profile-head');
+    head.appendChild(el('div', 'profile-name', profile.name));
+    head.appendChild(el('div', 'profile-handle', `@${profile.handle}`));
+    head.appendChild(el('div', 'profile-since', `${S.memberSince} ${fmtMonthYear(profile.createdAt)}`));
+    body.appendChild(head);
+
+    const ranks = el('div', 'row chips profile-ranks');
+    const rankChip = (label: string, rank: number | null): HTMLElement =>
+      el('span', `chip${rank !== null && rank <= 3 ? ' chip-coins' : ''}`,
+        `${label} ${rank !== null ? `#${rank}` : '—'}`);
+    ranks.appendChild(rankChip(S.rankWave, profile.ranks.wave));
+    ranks.appendChild(rankChip(S.rankCoins, profile.ranks.coins));
+    ranks.appendChild(rankChip(S.rankTime, profile.ranks.time));
+    body.appendChild(ranks);
+
+    const grid = el('div', 'panel results profile-grid');
+    const addRow = (label: string, value: string): void => {
+      const row = el('div', 'row result-row');
+      row.appendChild(el('span', 'grow item-desc', label));
+      row.appendChild(el('span', 'result-value', value));
+      grid.appendChild(row);
+    };
+    addRow(S.bestWave, profile.stats.bestWave > 0 ? String(profile.stats.bestWave) : '—');
+    addRow(S.bestScoreL, String(profile.stats.bestScore));
+    addRow(S.bestTimeL, fmtTime(profile.stats.bestTime));
+    addRow(S.bestCoinsL, String(profile.stats.bestCoins));
+    addRow(S.runs, String(profile.stats.runs));
+    addRow(S.totalKills, String(profile.stats.totalKills));
+    addRow(S.totalTimeL, fmtLongTime(profile.stats.totalTime));
+    body.appendChild(grid);
+
+    if (own && session.authed) {
+      const col = el('div', 'col profile-actions');
+      col.appendChild(this.btn(S.editName, 'ghost', () => this.editOwnName()));
+      col.appendChild(this.btn(S.logoutBtn, 'danger', () => {
+        this.confirm(S.logoutConfirm, () => {
+          void session.logout().then(() => this.showMenu());
+        }, S.logoutYes);
+      }));
+      body.appendChild(col);
+    }
+  }
+
+  private editOwnName(): void {
+    this.showNamePrompt({
+      initial: session.player?.name ?? this.save.data.name,
+      onCancel: () => this.showProfile(),
+      onDone: async (name) => {
+        try {
+          await session.rename(name);
+          this.audio.play('confirm');
+          this.showProfile();
+          return null;
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 409) {
+            return e.suggestion ? `${S.nameTaken} → ${e.suggestion}` : S.nameTaken;
+          }
+          return S.netError;
+        }
+      },
+    });
   }
 
   // ————— transient elements —————
@@ -524,4 +907,71 @@ export class UI {
     t.classList.add('off');
     setTimeout(() => t.remove(), 500);
   }
+
+  // ————— guided tutorial overlay —————
+
+  /** Show/update the instructor bubble (guided tutorial steps). */
+  tutorialSay(title: string, sub?: string): void {
+    if (!this.tutBubble) {
+      const b = el('div', 'tut-bubble');
+      this.tutBubbleTitle = el('div', 'tut-bubble-title');
+      this.tutBubbleSub = el('div', 'tut-bubble-sub');
+      b.appendChild(this.tutBubbleTitle);
+      b.appendChild(this.tutBubbleSub);
+      this.root.appendChild(b);
+      this.tutBubble = b;
+    }
+    this.tutBubbleTitle!.textContent = title;
+    this.tutBubbleSub!.textContent = sub ?? '';
+    this.tutBubbleSub!.style.display = sub ? '' : 'none';
+    // Retrigger the pop-in so each step visibly announces itself.
+    this.tutBubble.classList.remove('pop');
+    void this.tutBubble.offsetWidth;
+    this.tutBubble.classList.add('pop');
+    this.audio.play('tap');
+  }
+
+  /** Update only the bubble's sub line (trial countdown). */
+  tutorialSub(text: string): void {
+    if (!this.tutBubbleSub) return;
+    this.tutBubbleSub.textContent = text;
+    this.tutBubbleSub.style.display = '';
+  }
+
+  hideTutorialBubble(): void {
+    this.tutBubble?.remove();
+    this.tutBubble = null;
+    this.tutBubbleTitle = null;
+    this.tutBubbleSub = null;
+  }
+
+  showTutorialSkip(onSkip: () => void): void {
+    this.hideTutorialSkip();
+    const b = this.btn(S.tutSkip, 'ghost small tut-skip', () => {
+      this.confirm(S.tutSkipConfirm, onSkip, S.tutSkipYes);
+    });
+    this.root.appendChild(b);
+    this.tutSkipBtn = b;
+  }
+
+  hideTutorialSkip(): void {
+    this.tutSkipBtn?.remove();
+    this.tutSkipBtn = null;
+  }
+}
+
+// ————— formatting helpers —————
+
+function fmtMonthYear(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(d);
+}
+
+function fmtLongTime(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 0) return `${h}h ${m}min`;
+  return fmtTime(s);
 }

@@ -1,7 +1,7 @@
 import type { Game, Scene } from '../core/game';
 import type { Input } from '../core/input';
 import type { SaveSystem } from '../core/save';
-import { damp, rand } from '../core/utils';
+import { damp, rand, randomId } from '../core/utils';
 import type { AudioEngine } from '../audio/audio';
 import type { Music } from '../audio/music';
 import { Background } from '../fx/background';
@@ -14,8 +14,11 @@ import { Hud, type HudView } from './hud';
 import { Pickups } from './pickups';
 import { Player } from './player';
 import { EnemyShots, PlayerShots } from './projectiles';
+import { S } from '../i18n/strings';
+import type { RunSubmission } from '../net/protocol';
+import { TutorialDirector, type TutorialHooks } from './tutorial';
 import { computeStats, rollChoices, type Stats } from './upgrades';
-import { WaveDirector } from './waves';
+import { WaveDirector, type Director } from './waves';
 import { Nova, Orbitals } from './weapons';
 import type { World } from './world';
 import type { RunStats, UI } from '../ui/ui';
@@ -26,6 +29,10 @@ export interface GameDeps {
   ui: UI;
   audio: AudioEngine;
   music: Music;
+  /** Present = guided-tutorial match: scripted spawns, revive on death, no records. */
+  tutorial?: TutorialHooks;
+  /** Fired once per real run with the final numbers (leaderboard submission). */
+  onRunEnd?: (run: RunSubmission) => void;
 }
 
 type RunState = 'playing' | 'levelup' | 'paused' | 'dying' | 'over';
@@ -61,7 +68,8 @@ export class GameScene implements Scene, World {
   private tutorialActive = false;
 
   private readonly upgLevels = new Map<string, number>();
-  private readonly waves: WaveDirector;
+  private readonly waves: Director;
+  private readonly tutorialDir: TutorialDirector | null = null;
   private readonly hud = new Hud();
   private readonly bg = new Background();
   private readonly orbitals = new Orbitals();
@@ -79,18 +87,27 @@ export class GameScene implements Scene, World {
     this.player = new Player(this.stats);
     this.particles.quality = deps.save.data.settings.lowFx ? 0.45 : 1;
     this.deathDot = glowDot(10, '#9ff2ff');
-    this.waves = new WaveDirector({
-      onWave: (wave) => {
-        this.deps.ui.banner(`ONDA ${wave}`);
-        this.audio.play('wave');
-        this.deps.music.intensity = Math.min(1, wave / 12);
-      },
-      onBossWarn: () => {
-        this.deps.ui.banner('COLOSSO DA RUÍNA', 'ELE SENTIU SUA PRESENÇA', true);
-        this.audio.play('warn');
-        this.deps.music.intensity = 1;
-      },
-    });
+    if (deps.tutorial) {
+      this.tutorialDir = new TutorialDirector({ ui: deps.ui, save: deps.save, hooks: deps.tutorial });
+      this.waves = this.tutorialDir;
+    } else {
+      this.waves = new WaveDirector({
+        onWave: (wave) => {
+          this.deps.ui.banner(`ONDA ${wave}`);
+          this.audio.play('wave');
+          this.deps.music.intensity = Math.min(1, wave / 12);
+        },
+        onBossWarn: () => {
+          this.deps.ui.banner('COLOSSO DA RUÍNA', 'ELE SENTIU SUA PRESENÇA', true);
+          this.audio.play('warn');
+          this.deps.music.intensity = 1;
+        },
+      });
+    }
+  }
+
+  get isTutorial(): boolean {
+    return this.tutorialDir !== null;
   }
 
   private readonly lv = (id: string): number => this.upgLevels.get(id) ?? 0;
@@ -98,6 +115,8 @@ export class GameScene implements Scene, World {
   enter(): void {
     this.deps.music.setMode('game');
     this.deps.music.intensity = 0;
+    // The guided tutorial stages its own arena and announcements.
+    if (this.tutorialDir) return;
     this.deps.ui.banner('ONDA 1');
     if (!this.deps.save.data.tutorialDone) {
       this.tutorialActive = true;
@@ -114,6 +133,8 @@ export class GameScene implements Scene, World {
   exit(): void {
     this.deps.game.timeScale = 1;
     this.deps.ui.hideTutorial();
+    this.deps.ui.hideTutorialBubble();
+    this.deps.ui.hideTutorialSkip();
     this.particles.clear();
     this.floaters.clear();
     this.enemies.clear();
@@ -213,6 +234,7 @@ export class GameScene implements Scene, World {
     this.killScore += e.score;
     this.combo++;
     this.comboT = BAL.combo.window;
+    this.tutorialDir?.noteKill();
     const frag = this.stats.fragLevel;
     if (frag > 0) {
       this.enemies.queueAoe(e.x, e.y, 52 + 16 * frag, this.stats.damage * 0.35 * frag);
@@ -229,6 +251,7 @@ export class GameScene implements Scene, World {
   onGemCollected(value: number): void {
     this.gemStreak++;
     this.gemStreakT = 0.9;
+    this.tutorialDir?.noteGem();
     this.audio.play('gem', Math.pow(2, Math.min(this.gemStreak, 12) * 0.08));
     const mult = 1 + Math.min(this.combo, BAL.combo.maxStack) * BAL.combo.xpPerStack;
     this.player.addXp(value * mult);
@@ -238,12 +261,29 @@ export class GameScene implements Scene, World {
     const gained = Math.max(1, Math.round(value * this.stats.coinMult));
     this.coinsRun += gained;
     this.audio.play('coin');
+    this.tutorialDir?.noteCoin();
     this.floaters.spawn(this.player.x, this.player.y - 26, `+${gained}`, {
       color: '#ffc857', size: 13, bold: true,
     });
   }
 
   onPlayerDeath(): void {
+    // Training has no permadeath: restore the ship, shove the swarm back and
+    // let the pilot keep learning.
+    if (this.tutorialDir) {
+      this.player.dead = false;
+      this.player.hp = this.stats.maxHp;
+      this.player.iframes = 2.5;
+      for (const e of this.enemies.list) {
+        const a = Math.atan2(e.y - this.player.y, e.x - this.player.x);
+        e.kvx += Math.cos(a) * 620;
+        e.kvy += Math.sin(a) * 620;
+      }
+      this.particles.ring(this.player.x, this.player.y, '#35f0ff', 12, 520, 0.6, 6);
+      this.audio.play('heart');
+      this.deps.ui.banner(S.tutReviveTitle, S.tutReviveSub);
+      return;
+    }
     this.state = 'dying';
     this.deathT = 0.6;
     this.deps.game.timeScale = 0.25;
@@ -267,17 +307,34 @@ export class GameScene implements Scene, World {
       + wave * BAL.score.perWave
       + Math.round(this.runTime * BAL.score.perSecond);
     const coins = this.coinsRun + wave * BAL.score.coinsPerWave;
-    const newRecordWave = wave > save.data.bestWave;
-    const newRecordScore = score > save.data.bestScore;
+    const records = {
+      wave: wave > save.data.bestWave,
+      score: score > save.data.bestScore,
+      time: this.runTime > save.data.bestTime,
+      coins: coins > save.data.bestCoins,
+    };
+    const newRecord = records.wave || records.score || records.time || records.coins;
 
     save.data.coins += coins;
     save.data.bestWave = Math.max(save.data.bestWave, wave);
     save.data.bestScore = Math.max(save.data.bestScore, score);
+    save.data.bestTime = Math.max(save.data.bestTime, this.runTime);
+    save.data.bestCoins = Math.max(save.data.bestCoins, coins);
     save.data.runs++;
     save.data.totalKills += this.kills;
+    save.data.totalTime += this.runTime;
     save.persist();
 
-    this.audio.play(newRecordWave || newRecordScore ? 'record' : 'over');
+    this.deps.onRunEnd?.({
+      runId: randomId(),
+      wave,
+      score,
+      kills: this.kills,
+      time: this.runTime,
+      coins,
+    });
+
+    this.audio.play(newRecord ? 'record' : 'over');
     this.deps.music.setMode('menu');
 
     const stats: RunStats = {
@@ -286,7 +343,7 @@ export class GameScene implements Scene, World {
       time: this.runTime,
       score,
       coins,
-      newRecord: newRecordWave || newRecordScore,
+      records,
     };
     this.deps.ui.showGameOver(stats);
   }
@@ -305,6 +362,7 @@ export class GameScene implements Scene, World {
       return;
     }
     this.deps.ui.showLevelUp(choices, this.lv, (def) => {
+      this.tutorialDir?.notePick();
       this.upgLevels.set(def.id, this.lv(def.id) + 1);
       const next = computeStats(this.deps.save.data, this.lv);
       this.player.applyStats(next);
@@ -352,6 +410,7 @@ export class GameScene implements Scene, World {
     this.playerShots.render(ctx);
     this.particles.render(ctx);
     this.floaters.render(ctx);
+    this.tutorialDir?.renderWorld(ctx, this, time);
     ctx.restore();
 
     this.bg.renderVignette(ctx, w, h);

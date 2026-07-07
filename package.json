@@ -1,16 +1,25 @@
 {
   "name": "vanguarda",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "VANGUARDA — arena survival roguelite premium para navegador (mobile-first, PWA, sem engine)",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "node scripts/build.mjs --serve",
+    "dev:full": "vercel dev",
     "build": "node scripts/build.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p api --noEmit",
+    "db:apply": "node scripts/db-apply.mjs",
     "icons": "node scripts/gen-icons.mjs"
   },
+  "dependencies": {
+    "google-auth-library": "^10.1.0",
+    "jose": "^6.0.11",
+    "pg": "^8.16.0"
+  },
   "devDependencies": {
+    "@types/pg": "^8.15.4",
+    "@vercel/node": "^5.3.0",
     "esbuild": "^0.25.0",
     "playwright-core": "^1.61.1",
     "typescript": "^5.8.0"

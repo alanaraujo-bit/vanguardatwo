@@ -1,10 +1,12 @@
 import { Game } from './core/game';
-import { Input } from './core/input';
+import { Input, isTyping } from './core/input';
 import { SaveSystem } from './core/save';
 import { Viewport } from './core/viewport';
 import { AudioEngine } from './audio/audio';
 import { Music } from './audio/music';
 import { GameScene, MenuScene } from './game/scene';
+import { session } from './net/session';
+import { sync } from './net/sync';
 import { UI, type UiActions } from './ui/ui';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
@@ -14,6 +16,8 @@ const game = new Game(canvas, vp, input);
 
 const save = new SaveSystem();
 save.load();
+session.init(save);
+sync.init(save);
 
 const audio = new AudioEngine();
 const music = new Music(audio);
@@ -30,12 +34,57 @@ function applySettings(): void {
 let run: GameScene | null = null;
 const menuScene = new MenuScene(game);
 
+/**
+ * After the guided tutorial (finished or skipped), first-timers pick a name
+ * and are offered the Google login; replays go straight back to the menu.
+ */
+function endTutorial(): void {
+  run = null;
+  music.setMode('menu');
+  game.setScene(menuScene);
+  ui.hideGameOverlay();
+  ui.hideTutorialBubble();
+  ui.hideTutorialSkip();
+
+  if (save.data.onboarded) {
+    ui.showMenu();
+    return;
+  }
+  ui.showNamePrompt({
+    initial: save.data.name,
+    onDone: async (name) => {
+      save.data.name = name;
+      save.data.tutorialDone = true;
+      save.data.onboarded = true;
+      save.persist();
+      ui.showLogin({
+        onDone: () => ui.showMenu(),
+        onSkip: () => ui.showMenu(),
+      });
+      return null;
+    },
+  });
+}
+
 const actions: UiActions = {
   startRun() {
-    run = new GameScene({ game, save, ui, audio, music });
+    run = new GameScene({
+      game, save, ui, audio, music,
+      onRunEnd: (result) => sync.submitRun(result),
+    });
     game.setScene(run);
     ui.hideAll();
     ui.showGameOverlay();
+  },
+  startTutorial() {
+    run = new GameScene({
+      game, save, ui, audio, music,
+      tutorial: { onComplete: endTutorial },
+    });
+    game.setScene(run);
+    ui.hideAll();
+    ui.showGameOverlay();
+    ui.showTutorialSkip(endTutorial);
   },
   pauseRun() {
     run?.pause();
@@ -44,9 +93,14 @@ const actions: UiActions = {
     run?.resume();
   },
   restartRun() {
-    actions.startRun();
+    if (run?.isTutorial) actions.startTutorial();
+    else actions.startRun();
   },
   quitToMenu() {
+    if (run?.isTutorial) {
+      endTutorial();
+      return;
+    }
     run = null;
     music.setMode('menu');
     game.setScene(menuScene);
@@ -61,8 +115,20 @@ const ui = new UI(save, audio, actions);
 applySettings();
 music.setMode('menu');
 game.setScene(menuScene);
-ui.showMenu();
+if (save.data.onboarded) {
+  ui.showMenu();
+} else {
+  actions.startTutorial();
+}
 game.start();
+
+// Restore a logged-in session in the background; the menu re-renders when it
+// lands (account chip, cloud records).
+session.onChange(() => {
+  applySettings();
+  ui.refreshMenu();
+});
+void session.restore();
 
 // Mobile browsers require a user gesture before audio can start.
 window.addEventListener('pointerdown', () => {
@@ -80,6 +146,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 window.addEventListener('keydown', (e) => {
+  if (isTyping(e)) return;
   if (e.code === 'Escape' || e.code === 'KeyP') run?.pause();
 });
 
