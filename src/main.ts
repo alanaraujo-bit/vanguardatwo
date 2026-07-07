@@ -100,12 +100,12 @@ if (boot) {
   setTimeout(() => boot.remove(), 700);
 }
 
-// Offline support (PWA) — only on secure origins.
-const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
-if ('serviceWorker' in navigator && (location.protocol === 'https:' || isLocal)) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => {
-      // offline support is a bonus, never a blocker
-    });
-  });
-}
+// Offline support (PWA) — disabled temporarily for debugging
+// const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
+// if ('serviceWorker' in navigator && (location.protocol === 'https:' || isLocal)) {
+//   window.addEventListener('load', () => {
+//     navigator.serviceWorker.register('sw.js').catch(() => {
+//       // offline support is a bonus, never a blocker
+//     });
+//   });
+// }
