@@ -25,6 +25,8 @@ export interface SaveData {
   tutorialDone: boolean;
   meta: Record<string, number>;
   settings: Settings;
+  /** Highest campaign level unlocked (1-based; 1 = only the first level). */
+  campaignLevel: number;
 }
 
 const GUEST_KEY = 'vanguarda.save.v1';
@@ -47,6 +49,7 @@ function defaults(): SaveData {
     tutorialDone: false,
     meta: {},
     settings: { sfx: true, music: true, haptics: true, lowFx: false },
+    campaignLevel: 1,
   };
 }
 

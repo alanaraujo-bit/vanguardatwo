@@ -315,6 +315,10 @@ export class Enemies {
     while (this.pendingAoe.length > 0 && guard++ < 60) {
       const aoe = this.pendingAoe.shift()!;
       const r2 = aoe.r * aoe.r;
+      // Blast radius grows with Fragmentação's level, so the ring must too —
+      // otherwise the upgrade has no visible tell beyond the first pick.
+      world.particles.ring(aoe.x, aoe.y, '#ff9f43', 8, aoe.r * 2.6, 0.4, 4);
+      world.audio.play('burst', 0.8);
       for (const e of this.list) {
         if (e.dead) continue;
         if (dist2(aoe.x, aoe.y, e.x, e.y) > r2) continue;

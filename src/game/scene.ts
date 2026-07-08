@@ -16,13 +16,15 @@ import { Player } from './player';
 import { EnemyShots, PlayerShots } from './projectiles';
 import { S } from '../i18n/strings';
 import type { RunSubmission } from '../net/protocol';
+import type { LevelDef } from './campaign';
+import { LevelDirector } from './level-director';
 import { SECTORS, sectorForWave } from './sectors';
 import { TutorialDirector, type TutorialHooks } from './tutorial';
 import { computeStats, rollChoices } from './upgrades';
 import { WaveDirector, type Director } from './waves';
 import { Nova, Orbitals } from './weapons';
 import type { World } from './world';
-import type { RunStats, UI } from '../ui/ui';
+import type { LevelStats, RunStats, UI } from '../ui/ui';
 
 export interface GameDeps {
   game: Game;
@@ -32,11 +34,13 @@ export interface GameDeps {
   music: Music;
   /** Present = guided-tutorial match: scripted spawns, revive on death, no records. */
   tutorial?: TutorialHooks;
+  /** Present = campaign match: a fixed hand-authored level, no leaderboard, unlocks the next level on clear. */
+  campaign?: { level: LevelDef; index: number };
   /** Fired once per real run with the final numbers (leaderboard submission). */
   onRunEnd?: (run: RunSubmission) => void;
 }
 
-type RunState = 'playing' | 'levelup' | 'paused' | 'dying' | 'over';
+type RunState = 'playing' | 'levelup' | 'paused' | 'dying' | 'winning' | 'over';
 
 export class GameScene implements Scene, World {
   // — World contract —
@@ -68,6 +72,7 @@ export class GameScene implements Scene, World {
   private camY = 0;
   private trauma = 0;
   private deathT = 0;
+  private winT = 0;
   private tutorialActive = false;
   /** Sector-transition screen flash: 1 → 0 over ~a second. */
   private sectorFlash = 0;
@@ -76,6 +81,7 @@ export class GameScene implements Scene, World {
   private readonly upgLevels = new Map<string, number>();
   private readonly waves: Director;
   private readonly tutorialDir: TutorialDirector | null = null;
+  private readonly levelDir: LevelDirector | null = null;
   private readonly hud = new Hud();
   private readonly bg = new Background();
   private readonly orbitals = new Orbitals();
@@ -96,6 +102,9 @@ export class GameScene implements Scene, World {
     if (deps.tutorial) {
       this.tutorialDir = new TutorialDirector({ ui: deps.ui, save: deps.save, hooks: deps.tutorial });
       this.waves = this.tutorialDir;
+    } else if (deps.campaign) {
+      this.levelDir = new LevelDirector(deps.campaign.level, deps.campaign.index, { ui: deps.ui, audio: this.audio });
+      this.waves = this.levelDir;
     } else {
       this.waves = new WaveDirector({
         onWave: (wave) => {
@@ -132,6 +141,14 @@ export class GameScene implements Scene, World {
   enter(): void {
     this.deps.music.setMode('game');
     this.deps.music.intensity = 0;
+    if (this.deps.campaign) {
+      const { level } = this.deps.campaign;
+      this.deps.music.setTheme(level.sector.music);
+      this.bg.setTheme(level.sector.background);
+      this.deps.ui.banner(level.name, level.subtitle, true);
+      this.audio.play('sector');
+      return;
+    }
     this.deps.music.setTheme(SECTORS[0].music);
     this.bg.setTheme(SECTORS[0].background);
     // The guided tutorial stages its own arena and announcements.
@@ -178,6 +195,15 @@ export class GameScene implements Scene, World {
       return;
     }
 
+    if (this.state === 'winning') {
+      this.winT -= dt;
+      this.particles.update(dt);
+      this.floaters.update(dt);
+      this.updateCamera(dt);
+      if (this.winT <= 0) this.finalize();
+      return;
+    }
+
     this.runTime += dt;
     this.comboT -= dt;
     if (this.comboT <= 0) this.combo = 0;
@@ -191,6 +217,7 @@ export class GameScene implements Scene, World {
 
     this.player.update(dt, this);
     this.waves.update(dt, this);
+    if (this.state === 'playing' && this.waves.cleared) this.beginVictory();
     this.enemies.update(dt, this);
     this.playerShots.update(dt, this);
     this.enemyShots.update(dt, this);
@@ -274,6 +301,7 @@ export class GameScene implements Scene, World {
     this.combo++;
     this.comboT = BAL.combo.window;
     this.tutorialDir?.noteKill();
+    this.levelDir?.noteKill();
     const frag = killer ? killer.stats.fragLevel : 0;
     if (killer && frag > 0) {
       this.enemies.queueAoe(e.x, e.y, 52 + 16 * frag, killer.stats.damage * 0.35 * frag, killer);
@@ -284,9 +312,9 @@ export class GameScene implements Scene, World {
     this.audio.play('bossDie');
     this.hitStop(0.4, 0.05);
     this.shake(42);
-    const boss = sectorForWave(this.waves.wave).boss;
-    const sector = sectorForWave(this.waves.wave);
-    this.deps.music.setTheme(sector.music);
+    const boss = this.waves.bossInfo?.() ?? sectorForWave(this.waves.wave).boss;
+    const music = this.deps.campaign?.level.sector.music ?? sectorForWave(this.waves.wave).music;
+    this.deps.music.setTheme(music);
     this.deps.music.intensity = Math.min(1, this.waves.wave / 12);
     this.deps.ui.banner(boss.defeatTitle, boss.defeatSub);
   }
@@ -341,9 +369,21 @@ export class GameScene implements Scene, World {
     this.deps.ui.hideTutorial();
   }
 
+  private beginVictory(): void {
+    this.state = 'winning';
+    this.winT = 1.2;
+    this.hitStop(0.3, 0.06);
+    this.shake(20);
+    this.audio.play('record');
+  }
+
   private finalize(): void {
     this.state = 'over';
     this.deps.game.timeScale = 1;
+    if (this.deps.campaign) {
+      this.finalizeCampaign();
+      return;
+    }
     const save = this.deps.save;
     const wave = this.waves.wave;
     const score = this.killScore
@@ -389,6 +429,28 @@ export class GameScene implements Scene, World {
       records,
     };
     this.deps.ui.showGameOver(stats);
+  }
+
+  private finalizeCampaign(): void {
+    const { index } = this.deps.campaign!;
+    const cleared = this.waves.cleared === true;
+    const save = this.deps.save;
+
+    if (cleared) {
+      save.data.coins += this.coinsRun;
+      save.data.campaignLevel = Math.max(save.data.campaignLevel, index + 2);
+      save.persist();
+    }
+
+    this.deps.music.setMode('menu');
+    const stats: LevelStats = {
+      levelIndex: index,
+      kills: this.kills,
+      time: this.runTime,
+      coins: this.coinsRun,
+      cleared,
+    };
+    this.deps.ui.showLevelComplete(stats);
   }
 
   private openLevelUp(): void {
@@ -480,7 +542,7 @@ export class GameScene implements Scene, World {
     hv.hideWave = this.tutorialDir !== null;
     const boss = this.enemies.boss;
     hv.boss = boss
-      ? { hp: boss.hp, maxHp: boss.maxHp, name: sectorForWave(this.waves.wave).boss.name }
+      ? { hp: boss.hp, maxHp: boss.maxHp, name: (this.waves.bossInfo?.() ?? sectorForWave(this.waves.wave).boss).name }
       : null;
     this.hud.render(ctx, hv, vp, time);
   }

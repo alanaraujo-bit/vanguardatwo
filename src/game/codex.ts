@@ -1,5 +1,6 @@
 import { drawSprite, shapeSprite, type Sprite } from '../fx/sprites';
 import { BAL } from './balance';
+import { CAMPAIGN } from './campaign';
 import { SPECS as ENEMY_SPECS, ENEMY_SHAPE_OPTS, isBossKind, type EnemyKind } from './enemies';
 import { META_DEFS } from './meta';
 import { COIN_SHAPE, GEM_SHAPE, MAX_GEMS, heartSprite } from './pickups';
@@ -407,6 +408,21 @@ const resourceEntries: CodexEntry[] = [
 
 const systemEntries: CodexEntry[] = [
   {
+    id: 'campaign',
+    name: 'Modo Campanha',
+    tagline: `${CAMPAIGN.length} fases fixas, cada uma com seu próprio desafio.`,
+    lore: 'Fora da resistência sem fim do Modo Solo, o comando isolou confrontos específicos da Ruína para treinamento dirigido: fases curtas e desenhadas à mão, cada uma com sua própria composição de inimigos, objetivo e dificuldade.',
+    tactic: 'Vencer uma fase destrava a seguinte — a progressão é linear. A nave usada é a mesma do Modo Solo, com todas as melhorias permanentes já compradas no Hangar, então cada fase pressupõe o poder de fogo que você já construiu até ali.',
+    accent: '#ffc857',
+    icon: paintIcon('power', '#ffc857', 48),
+    stats: [
+      { label: 'Fases', value: String(CAMPAIGN.length) },
+      { label: 'Desbloqueio', value: 'Linear — termine uma fase para abrir a próxima' },
+      { label: 'Objetivos', value: 'Sobreviver, abater um número de inimigos, ou derrotar um chefe' },
+      { label: 'Progressão permanente', value: 'Usa as melhorias já compradas no Hangar' },
+    ],
+  },
+  {
     id: 'coop',
     name: 'Operação em Dupla (CO-OP)',
     tagline: 'Duas naves, uma sala, um código — sobrevivam juntos.',
@@ -427,7 +443,7 @@ const systemEntries: CodexEntry[] = [
   {
     id: 'sectors',
     name: 'Setores',
-    tagline: `A campanha — a cada ${SECTOR_LEN} ondas, um mundo novo.`,
+    tagline: `A rota do Modo Solo — a cada ${SECTOR_LEN} ondas, um mundo novo.`,
     lore: 'A cada dez ondas a partida viaja para um novo setor: outro cenário, outra trilha sonora, outros inimigos e um chefe próprio. O Campo da Ruína é só a porta de entrada: na onda 11, a Colmeia acorda; na onda 21, o Arquivo Magnético abre seus trilhos.',
     tactic: 'Cada setor tem seu próprio ecossistema de ameaças; as táticas que funcionavam no anterior podem não bastar. Quando a rota chega ao fim, ela recomeça do início — mas os inimigos voltam muito mais fortes.',
     accent: '#9dff2e',

@@ -2,6 +2,7 @@ import type { SaveSystem } from '../core/save';
 import { fmtTime } from '../core/utils';
 import type { AudioEngine } from '../audio/audio';
 import { S } from '../i18n/strings';
+import { CAMPAIGN } from '../game/campaign';
 import { CODEX, CODEX_INTRO, type CodexCategoryId, type CodexEntry } from '../game/codex';
 import { META_DEFS, metaCost, metaLevel } from '../game/meta';
 import { SHIP_SHAPE } from '../game/player';
@@ -22,10 +23,19 @@ export interface RunStats {
   records: { wave: boolean; score: boolean; time: boolean; coins: boolean };
 }
 
+export interface LevelStats {
+  levelIndex: number;
+  kills: number;
+  time: number;
+  coins: number;
+  cleared: boolean;
+}
+
 export interface UiActions {
   startRun(): void;
   startTutorial(): void;
   startCoop(): void;
+  startCampaign(levelIndex: number): void;
   pauseRun(): void;
   resumeRun(): void;
   restartRun(): void;
@@ -283,6 +293,13 @@ export class UI {
         desc: S.modeCoopDesc,
         onSelect: () => this.actions.startCoop(),
       },
+      {
+        icon: this.shipIcon(44, ['#ffc857']),
+        accent: 'var(--amber)',
+        title: S.modeCampaignTitle,
+        desc: S.modeCampaignDesc,
+        onSelect: () => this.showCampaignSelect(),
+      },
     ];
 
     const list = el('div', 'col cards mode-list');
@@ -313,6 +330,53 @@ export class UI {
 
     s.appendChild(el('div', 'spacer'));
     this.open('modeselect');
+  }
+
+  // ————— campaign (level select) —————
+
+  showCampaignSelect(): void {
+    this.hideAll();
+    const s = this.screen('campaignselect');
+
+    const header = el('div', 'row header');
+    header.appendChild(this.btn(`‹ ${S.back}`, 'ghost small', () => this.showModeSelect()));
+    s.appendChild(header);
+
+    s.appendChild(el('h2', 'heading', S.campaignTitle));
+    s.appendChild(el('div', 'subheading', S.campaignSub));
+
+    const list = el('div', 'col cards mode-list');
+    CAMPAIGN.forEach((level, i) => {
+      const unlocked = i < this.save.data.campaignLevel;
+      const card = el('button', `card mode-card${unlocked ? '' : ' locked'}`);
+      card.style.setProperty('--i', String(i));
+      card.style.setProperty('--accent', level.sector.accent);
+
+      const icon = el('div', 'icon-wrap');
+      icon.appendChild(this.shipIcon(40, [level.sector.accent]));
+      card.appendChild(icon);
+
+      const body = el('div', 'grow');
+      body.appendChild(el('div', 'item-name', `${i + 1}. ${level.name}`));
+      body.appendChild(el('div', 'item-desc', unlocked ? level.subtitle : S.campaignLocked));
+      card.appendChild(body);
+
+      card.appendChild(el('span', 'mode-chevron', unlocked ? '›' : '🔒'));
+
+      card.addEventListener('pointerdown', () => this.audio.play('tap'));
+      card.addEventListener('click', () => {
+        if (!unlocked) {
+          this.audio.play('deny');
+          return;
+        }
+        this.audio.play('confirm');
+        this.actions.startCampaign(i);
+      });
+      list.appendChild(card);
+    });
+    s.appendChild(list);
+    s.appendChild(el('div', 'spacer'));
+    this.open('campaignselect');
   }
 
   // ————— shop (hangar) —————
@@ -895,6 +959,49 @@ export class UI {
     col.appendChild(this.btn(S.menu, 'ghost', () => this.actions.quitToMenu()));
     s.appendChild(col);
     this.open('gameover');
+  }
+
+  showLevelComplete(stats: LevelStats): void {
+    this.hideGameOverlay();
+    const s = this.screen('levelcomplete');
+    const level = CAMPAIGN[stats.levelIndex];
+    s.appendChild(el('h2', 'heading gameover-title', stats.cleared ? S.levelClearTitle : S.levelFailedTitle));
+    s.appendChild(el('div', 'subheading', level.name));
+
+    const panel = el('div', 'panel results');
+    const addRow = (label: string, value: string): HTMLElement => {
+      const row = el('div', 'row result-row');
+      row.appendChild(el('span', 'grow item-desc', label));
+      const v = el('span', 'result-value', value);
+      row.appendChild(v);
+      panel.appendChild(row);
+      return v;
+    };
+    addRow(S.kills, String(stats.kills));
+    addRow(S.timeSurvived, fmtTime(stats.time));
+
+    const coinsRow = el('div', 'row result-row coins-row');
+    coinsRow.appendChild(el('span', 'grow item-desc', S.coinsEarned));
+    coinsRow.appendChild(el('span', 'coin-dot'));
+    const coinsEl = el('span', 'result-value amber', '0');
+    coinsRow.appendChild(coinsEl);
+    panel.appendChild(coinsRow);
+    this.countUp(coinsEl, stats.coins, 1.2, '+');
+    s.appendChild(panel);
+
+    const col = el('div', 'col actions');
+    const hasNext = stats.cleared && stats.levelIndex + 1 < CAMPAIGN.length;
+    if (hasNext) {
+      col.appendChild(this.btn(S.nextLevel, 'primary', () => this.actions.startCampaign(stats.levelIndex + 1)));
+    }
+    col.appendChild(this.btn(
+      stats.cleared ? S.playAgain : S.tryAgain,
+      hasNext ? 'ghost' : 'primary',
+      () => this.actions.startCampaign(stats.levelIndex),
+    ));
+    col.appendChild(this.btn(S.menu, 'ghost', () => this.actions.quitToMenu()));
+    s.appendChild(col);
+    this.open('levelcomplete');
   }
 
   // ————— pilot name —————

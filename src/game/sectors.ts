@@ -41,7 +41,7 @@ export interface SectorDef {
   music: MusicTheme;
 }
 
-const RUINA: SectorDef = {
+export const RUINA: SectorDef = {
   id: 'ruina',
   name: 'CAMPO DA RUÍNA',
   subtitle: 'O vazio onde a invasão começou',
@@ -64,7 +64,7 @@ const RUINA: SectorDef = {
   music: DEFAULT_MUSIC_THEME,
 };
 
-const COLMEIA: SectorDef = {
+export const COLMEIA: SectorDef = {
   id: 'colmeia',
   name: 'A COLMEIA',
   subtitle: 'Algo vivo pulsa nas profundezas',
@@ -104,7 +104,7 @@ const COLMEIA: SectorDef = {
   },
 };
 
-const ARQUIVO: SectorDef = {
+export const ARQUIVO: SectorDef = {
   id: 'arquivo',
   name: 'O ARQUIVO MAGNÉTICO',
   subtitle: 'Dados mortos orbitam como lâminas',

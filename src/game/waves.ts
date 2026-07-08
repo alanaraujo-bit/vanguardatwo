@@ -12,11 +12,17 @@ export interface WaveEvents {
 
 /**
  * What GameScene needs from a wave source. The real run uses WaveDirector;
- * the guided tutorial swaps in a scripted TutorialDirector.
+ * the guided tutorial swaps in a scripted TutorialDirector, and the campaign
+ * swaps in a LevelDirector.
  */
 export interface Director {
   wave: number;
   update(dt: number, world: World): void;
+  /** True once this director's win condition is met (campaign only). */
+  cleared?: boolean;
+  /** The boss currently in play, for GameScene's HUD/defeat banner. Defaults
+   * to WaveDirector's sector lookup when absent. */
+  bossInfo?(): SectorDef['boss'] | null;
 }
 
 /**
@@ -46,6 +52,10 @@ export class WaveDirector implements Director {
   constructor(private readonly events: WaveEvents, budget: WaveBudget = {}) {
     this.maxAliveMul = budget.maxAliveMul ?? 1;
     this.batchMul = budget.batchMul ?? 1;
+  }
+
+  bossInfo(): SectorDef['boss'] {
+    return sectorForWave(this.wave).boss;
   }
 
   update(dt: number, world: World): void {

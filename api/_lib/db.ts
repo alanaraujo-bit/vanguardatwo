@@ -7,7 +7,7 @@ export interface Queryable {
 }
 
 export const SAVE_COLS =
-  'coins, meta, best_wave, best_score, best_time, best_coins, runs, total_kills, total_time, tutorial_done, settings';
+  'coins, meta, best_wave, best_score, best_time, best_coins, runs, total_kills, total_time, tutorial_done, settings, campaign_level';
 
 /**
  * Shared pg pool, reused across invocations of a warm serverless instance.
@@ -40,6 +40,7 @@ export interface SaveRow {
   total_time: number;
   tutorial_done: boolean;
   settings: CloudSave['settings'];
+  campaign_level: number;
 }
 
 /** pg returns bigint columns as strings — normalize into the wire shape. */
@@ -56,6 +57,7 @@ export function cloudSaveFromRow(row: SaveRow): CloudSave {
     totalTime: row.total_time,
     tutorialDone: row.tutorial_done,
     settings: row.settings ?? null,
+    campaignLevel: row.campaign_level,
   };
 }
 
@@ -64,12 +66,12 @@ export async function writeCloudSave(q: Queryable, playerId: string, save: Cloud
     `update saves set
        coins = $2, meta = $3, best_wave = $4, best_score = $5, best_time = $6,
        best_coins = $7, runs = $8, total_kills = $9, total_time = $10,
-       tutorial_done = $11, settings = $12, updated_at = now()
+       tutorial_done = $11, settings = $12, campaign_level = $13, updated_at = now()
      where player_id = $1`,
     [
       playerId, save.coins, JSON.stringify(save.meta), save.bestWave, save.bestScore,
       save.bestTime, save.bestCoins, save.runs, save.totalKills, save.totalTime,
-      save.tutorialDone, save.settings ? JSON.stringify(save.settings) : null,
+      save.tutorialDone, save.settings ? JSON.stringify(save.settings) : null, save.campaignLevel,
     ],
   );
 }

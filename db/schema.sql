@@ -66,3 +66,7 @@ create index if not exists runs_player_idx on runs (player_id, created_at desc);
 -- boards; a future co-op leaderboard can rank these rows directly.
 alter table runs add column if not exists mode text not null default 'solo';
 alter table runs add column if not exists party_size int not null default 1;
+
+-- Campaign progress: highest level unlocked (1-based), synced like the rest
+-- of the cloud save.
+alter table saves add column if not exists campaign_level int not null default 1;

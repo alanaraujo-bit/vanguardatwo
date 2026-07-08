@@ -21,6 +21,7 @@ export interface CloudSave {
   totalTime: number;
   tutorialDone: boolean;
   settings: Settings | null;
+  campaignLevel: number;
 }
 
 export interface PlayerInfo {
@@ -124,6 +125,7 @@ export const SAVE_LIMITS = {
   runs: 200_000,
   totalKills: 50_000_000,
   totalTime: 20_000 * 3600,
+  campaignLevel: 11,
 } as const;
 
 function num(v: unknown, max: number): number {
@@ -162,6 +164,7 @@ export function clampCloudSave(raw: Partial<CloudSave> | null | undefined): Clou
     totalTime: num(r.totalTime, SAVE_LIMITS.totalTime),
     tutorialDone: r.tutorialDone === true,
     settings,
+    campaignLevel: Math.max(1, int(r.campaignLevel, SAVE_LIMITS.campaignLevel)),
   };
 }
 
@@ -189,6 +192,7 @@ export function mergeCloudSaves(a: CloudSave, b: CloudSave, coinsFrom: 'max' | '
     totalTime: Math.max(a.totalTime, b.totalTime),
     tutorialDone: a.tutorialDone || b.tutorialDone,
     settings: a.settings ?? b.settings,
+    campaignLevel: Math.max(a.campaignLevel, b.campaignLevel),
   };
 }
 
@@ -207,6 +211,7 @@ export function cloudFromSave(d: SaveData): CloudSave {
     totalTime: d.totalTime,
     tutorialDone: d.tutorialDone,
     settings: d.settings,
+    campaignLevel: d.campaignLevel,
   });
 }
 
@@ -223,4 +228,5 @@ export function applyCloudToSave(d: SaveData, c: CloudSave): void {
   d.totalTime = c.totalTime;
   d.tutorialDone = d.tutorialDone || c.tutorialDone;
   if (c.settings) d.settings = { ...c.settings };
+  d.campaignLevel = c.campaignLevel;
 }

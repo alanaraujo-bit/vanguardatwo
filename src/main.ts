@@ -4,6 +4,7 @@ import { SaveSystem } from './core/save';
 import { Viewport } from './core/viewport';
 import { AudioEngine } from './audio/audio';
 import { Music } from './audio/music';
+import { CAMPAIGN } from './game/campaign';
 import { CoopScene } from './game/coop/coop-scene';
 import { GameScene, MenuScene } from './game/scene';
 import { S } from './i18n/strings';
@@ -37,6 +38,8 @@ function applySettings(): void {
 }
 
 let run: GameScene | null = null;
+/** Index into CAMPAIGN of the level currently playing, or null outside campaign. */
+let campaignIndex: number | null = null;
 const menuScene = new MenuScene(game);
 
 // ————— co-op session state —————
@@ -226,6 +229,7 @@ function endTutorial(): void {
 const actions: UiActions = {
   startRun() {
     coopCleanup();
+    campaignIndex = null;
     run = new GameScene({
       game, save, ui, audio, music,
       onRunEnd: (result) => sync.submitRun(result),
@@ -236,6 +240,17 @@ const actions: UiActions = {
   },
   startCoop() {
     ui.showCoopMenu(coopMenuOpts);
+  },
+  startCampaign(levelIndex: number) {
+    coopCleanup();
+    campaignIndex = levelIndex;
+    run = new GameScene({
+      game, save, ui, audio, music,
+      campaign: { level: CAMPAIGN[levelIndex], index: levelIndex },
+    });
+    game.setScene(run);
+    ui.hideAll();
+    ui.showGameOverlay();
   },
   startTutorial() {
     run = new GameScene({
@@ -256,6 +271,7 @@ const actions: UiActions = {
   },
   restartRun() {
     if (run?.isTutorial) actions.startTutorial();
+    else if (campaignIndex !== null) actions.startCampaign(campaignIndex);
     else actions.startRun();
   },
   quitToMenu() {
@@ -264,6 +280,7 @@ const actions: UiActions = {
       return;
     }
     run = null;
+    campaignIndex = null;
     music.setMode('menu');
     game.setScene(menuScene);
     ui.hideGameOverlay();

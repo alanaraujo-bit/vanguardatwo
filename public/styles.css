@@ -662,6 +662,11 @@ html, body {
   font-weight: 700;
   color: var(--dim);
 }
+.mode-card.locked {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.mode-card.locked .mode-chevron { font-size: 18px; }
 
 /* ————— results (game over) ————— */
 

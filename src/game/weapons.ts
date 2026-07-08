@@ -13,6 +13,7 @@ const BLADE_HIT_COOLDOWN = 0.35;
 export class Orbitals {
   private angle = 0;
   private blade: Sprite | null = null;
+  private bladeLvl = 0;
 
   update(dt: number, world: World, p: Player): void {
     const lvl = p.stats.bladeLevel;
@@ -42,8 +43,11 @@ export class Orbitals {
   render(ctx: CanvasRenderingContext2D, p: Player): void {
     const lvl = p.stats.bladeLevel;
     if (lvl <= 0) return;
-    if (!this.blade) {
-      this.blade = shapeSprite({ radius: 11, color: '#7df3ff', points: BLADE_POINTS, fillAlpha: 0.4 });
+    if (!this.blade || this.bladeLvl !== lvl) {
+      // Bigger, denser blades per level — otherwise an extra blade in a
+      // crowded swarm reads as just another enemy sliver, not a power-up.
+      this.blade = shapeSprite({ radius: 9 + lvl * 2.2, color: '#7df3ff', points: BLADE_POINTS, fillAlpha: 0.34 + lvl * 0.05 });
+      this.bladeLvl = lvl;
     }
     const count = 1 + lvl;
 
