@@ -51,7 +51,11 @@ interface MpOrderResponse {
 export async function createPixCharge(opts: {
   amountCents: number;
   description: string;
+  itemTitle: string;
+  itemDescription: string;
   payerEmail: string;
+  payerFirstName?: string;
+  payerLastName?: string;
   externalReference: string;
   idempotencyKey: string;
 }): Promise<PixCharge> {
@@ -68,7 +72,18 @@ export async function createPixCharge(opts: {
       total_amount: amount,
       external_reference: opts.externalReference,
       description: opts.description,
-      payer: { email: opts.payerEmail },
+      payer: {
+        email: opts.payerEmail,
+        ...(opts.payerFirstName ? { first_name: opts.payerFirstName } : {}),
+        ...(opts.payerLastName ? { last_name: opts.payerLastName } : {}),
+      },
+      items: [{
+        title: opts.itemTitle,
+        description: opts.itemDescription,
+        quantity: 1,
+        unit_price: amount,
+        category_id: 'virtual_goods',
+      }],
       transactions: {
         payments: [{ amount, payment_method: { id: 'pix', type: 'bank_transfer' } }],
       },

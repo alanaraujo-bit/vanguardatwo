@@ -55,12 +55,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       return;
     }
 
-    const player = await db().query('select email from players where id = $1', [claims.playerId]);
+    const player = await db().query('select email, display_name from players where id = $1', [claims.playerId]);
     const email = player.rows[0]?.email as string | null | undefined;
+    const displayName = player.rows[0]?.display_name as string | undefined;
     if (!email) {
       sendError(res, 422, 'no_email');
       return;
     }
+    // Best-effort split of the in-game pilot name — Mercado Pago's fraud
+    // scoring wants payer.first_name/last_name; the game never collects a
+    // "real" legal name, so this is a heuristic, not verified identity.
+    const [payerFirstName, ...rest] = (displayName ?? '').trim().split(/\s+/).filter(Boolean);
+    const payerLastName = rest.join(' ') || undefined;
 
     const inserted = await db().query(
       `insert into purchases (player_id, pack_id, coins, amount_cents)
@@ -72,7 +78,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const charge = await createPixCharge({
       amountCents: pack.priceCents,
       description: `BALUARTE — ${pack.name}`,
+      itemTitle: pack.name,
+      itemDescription: `${totalCoins(pack)} moedas para BALUARTE`,
       payerEmail: email,
+      payerFirstName: payerFirstName || undefined,
+      payerLastName,
       externalReference: purchaseId,
       idempotencyKey: purchaseId,
     });
