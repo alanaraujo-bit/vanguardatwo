@@ -90,3 +90,9 @@ create table if not exists purchases (
 );
 
 create index if not exists purchases_player_idx on purchases (player_id, created_at desc);
+
+-- Estrelas por fase da campanha e skins (equipada + possuídas) — sincronizado
+-- como o resto do save na nuvem.
+alter table saves add column if not exists campaign_stars jsonb not null default '{}';
+alter table saves add column if not exists skin text not null default 'aegis';
+alter table saves add column if not exists owned_skins jsonb not null default '[]';
