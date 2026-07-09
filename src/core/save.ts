@@ -275,4 +275,24 @@ export class SaveSystem {
       // best effort
     }
   }
+
+  /**
+   * Wipe the device-local guest slot back to a clean sheet (keeping only
+   * settings). Called right after a successful login merge — otherwise the
+   * guest slot keeps whatever pre-login snapshot it had forever, and every
+   * later logout on this device shows that stale progress instead of a
+   * fresh local profile.
+   */
+  resetGuestSlot(): void {
+    try {
+      const raw = localStorage.getItem(GUEST_KEY);
+      const prevSettings = raw ? parse(raw).settings : undefined;
+      const fresh = defaults();
+      if (prevSettings) fresh.settings = prevSettings;
+      localStorage.setItem(GUEST_KEY, JSON.stringify(fresh));
+      if (this.key === GUEST_KEY) this.data = fresh;
+    } catch {
+      // best effort
+    }
+  }
 }

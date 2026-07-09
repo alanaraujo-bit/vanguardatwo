@@ -54,7 +54,10 @@ class Session {
       name: save.data.name || undefined,
       localSave: guest ? cloudFromSave(guest) : undefined,
     });
-    if (guest) save.markGuestMerged();
+    if (guest) {
+      save.markGuestMerged();
+      save.resetGuestSlot();
+    }
     this.adopt(res.player, res.save);
   }
 
@@ -86,13 +89,23 @@ class Session {
     const save = this.save;
     if (!save) return;
     save.switchToAccount(player.id);
-    // Fold any offline progress from this device's account slot into the
-    // cloud state; the next sync push sends the merged result back.
-    const merged = mergeCloudSaves(cloud, cloudFromSave(save.data), 'max');
-    applyCloudToSave(save.data, merged);
-    save.data.name = player.name;
-    save.data.onboarded = true;
-    save.persist();
+    try {
+      // Fold any offline progress from this device's account slot into the
+      // cloud state; the next sync push sends the merged result back.
+      const merged = mergeCloudSaves(cloud, cloudFromSave(save.data), 'max');
+      applyCloudToSave(save.data, merged);
+      save.data.name = player.name;
+      save.data.onboarded = true;
+      save.persist();
+    } catch (e) {
+      // Never leave `save` pointed at the account slot while session.status
+      // still says 'guest' — that mismatch is what let a failed login show
+      // the account's coins/progress on the (supposedly logged-out) guest
+      // profile. Roll back so the two stay consistent, then let the caller's
+      // .catch() report the failure as usual.
+      save.switchToGuest();
+      throw e;
+    }
     this.player = player;
     this.status = 'authed';
     this.notify();
