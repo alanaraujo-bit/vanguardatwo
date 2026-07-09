@@ -6,7 +6,8 @@ export type SfxName =
   | 'zap' | 'mine' | 'lattice'
   | 'arrow'
   | 'crack' | 'freeze' | 'shatter' | 'howl'
-  | 'drip' | 'hiss' | 'toxin';
+  | 'drip' | 'hiss' | 'toxin'
+  | 'clang' | 'slam' | 'sizzle';
 
 interface ToneOptions {
   f0: number;
@@ -344,6 +345,23 @@ export class AudioEngine {
         this.tone({ f0: 240, f1: 110, type: 'square', dur: 0.25, vol: 0.06, when: this.ctx.currentTime + 0.04 });
         this.noiseHit({ dur: 0.22, vol: 0.07, from: 2000, to: 300, filter: 'bandpass', q: 1.6 });
         this.vibrate(40);
+        break;
+      // ——— Setor 6: A Fundição ———
+      case 'clang':
+        // Metal batendo em metal — som seco e percussivo.
+        this.tone({ f0: 1400 * p, f1: 320, type: 'square', dur: 0.05, vol: 0.06 });
+        this.noiseHit({ dur: 0.04, vol: 0.05, from: 7000, to: 2500, filter: 'bandpass', q: 2.5 });
+        break;
+      case 'slam':
+        // Impacto pesado — baque surdo de metal contra pedra.
+        this.tone({ f0: 80, f1: 32, type: 'sawtooth', dur: 0.28, vol: 0.18 });
+        this.noiseHit({ dur: 0.25, vol: 0.15, from: 1500, to: 180, filter: 'lowpass', q: 0.8 });
+        this.vibrate([40, 60]);
+        break;
+      case 'sizzle':
+        // Metal derretendo — chiado quente e corrosivo.
+        this.tone({ f0: 1100 * p, f1: 260, type: 'triangle', dur: 0.1, vol: 0.05 });
+        this.noiseHit({ dur: 0.15, vol: 0.06, from: 6000, to: 900, filter: 'bandpass', q: 1.8 });
         break;
     }
   }

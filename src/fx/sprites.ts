@@ -254,3 +254,24 @@ export const MIASMA_POINTS: ShapePoints = Array.from({ length: 10 }, (_, i) => {
   const r = i % 2 === 0 ? 1.05 : 0.5 + (i * 0.07);
   return [Math.cos(a) * r, Math.sin(a) * r] as const;
 });
+
+// ——— Setor 6: A Fundição ———
+
+/** Cinder ember: irregular burning coal — jagged, asymmetric. */
+export const CINDER_POINTS: ShapePoints = [
+  [0, -1.05], [0.85, -0.6], [1.0, 0], [0.7, 0.75], [0, 0.9],
+  [-0.55, 0.8], [-0.9, 0.3], [-0.75, -0.4], [-0.25, -0.85],
+];
+
+/** Bellows furnace: bulbous bellows shape, wider at bottom. */
+export const BELLOWS_POINTS: ShapePoints = [
+  [0.3, -1.0], [0.9, -0.55], [1.0, 0], [0.9, 0.55], [0.3, 1.0],
+  [-0.3, 1.0], [-0.9, 0.55], [-1.0, 0], [-0.9, -0.55], [-0.3, -1.0],
+];
+
+/** Titan boss: 14-point uneven star — massive forge golem. */
+export const TITAN_POINTS: ShapePoints = Array.from({ length: 14 }, (_, i) => {
+  const a = (i / 14) * Math.PI * 2 - Math.PI / 2;
+  const r = i % 2 === 0 ? 1.05 : 0.55 + (i * 0.025);
+  return [Math.cos(a) * r, Math.sin(a) * r] as const;
+});

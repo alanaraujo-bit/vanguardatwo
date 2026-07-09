@@ -284,6 +284,43 @@ const ENEMY_LORE: Record<EnemyKind, EnemyLore> = {
     lore: 'No centro da Zona Tóxica, onde o veneno é mais denso, o Miasma pulsa. Não é uma entidade que caça: é um núcleo de reator vivo que CORROMPE o espaço ao redor, enchendo a arena de ácido e gás até não sobrar chão seguro.',
     tactic: 'Duas fases, duas respostas: na saturação, desvie dos glóbulos de ácido e não deixe as poças acumularem; no vácuo tóxico, fique atento aos cones de gás e posicione-se nos vãos entre eles. Abaixo de 35% de vida, tudo acelera e os cones de gás dobram de largura.',
   },
+  // — Setor 6: A Fundição —
+  spark: {
+    name: 'Fagulha',
+    tagline: 'Centelha de metal fundido que salta sem direção certa.',
+    lore: 'Uma lasca incandescente ejetada das forjas da Fundição. É instável por design: salta em zigue-zague e muda de direção sem aviso, como se fugisse do próprio calor que a mantém viva.',
+    tactic: 'Frágil e imprevisível — o perigo é ser cercado. Ao morrer, deixa uma poça de metal derretido no chão; evite abatê-la perto da sua rota de fuga.',
+  },
+  cinder: {
+    name: 'Brasa',
+    tagline: 'Torre de calor que cospe glóbulos de metal fundido.',
+    lore: 'Um carvão animado que fermenta magma em seu núcleo. Prefere manter distância, despejando glóbulos incandescentes que incendeiam o chão onde caem.',
+    tactic: 'O glóbulo é mais lento que um projétil comum, mas deixa uma poça de fogo ao cair — desvie do glóbulo e da poça juntos. Ao morrer, explode em três poças em leque.',
+  },
+  cog: {
+    name: 'Engrenagem',
+    tagline: 'Roda dentada que avança e dispara em investidas retas.',
+    lore: 'Uma engrenagem de aço forjado, despejada da linha de montagem ainda quente. Ela persegue o alvo em rolamento constante e, de repente, dispara numa investida cega que corta o campo.',
+    tactic: 'O brilho no centro dela anuncia a investida: saia da linha reta assim que ela parar de acelerar. Ao morrer, estilhaça em seis fragmentos metálicos que voam em círculo.',
+  },
+  bellows: {
+    name: 'Fornalha',
+    tagline: 'Fole ambulante que pulsa ondas de calor e queima por contato.',
+    lore: 'Um reservatório de ar superaquecido montado sobre pernas curtas, incapaz de perseguir qualquer coisa — mas preenche o espaço ao redor com calor sufocante.',
+    tactic: 'Tem uma aura de dano passivo — não fique perto sem necessidade. A cada poucos segundos, solta um anel de calor que cobre uma área enorme. O anel não deixa poça, mas o dano em área é traiçoeiro.',
+  },
+  crusher: {
+    name: 'Esmagador',
+    tagline: 'Prensa hidráulica ambulante que pinga metal derretido.',
+    lore: 'Um bloco de ferro e pistões mal calibrados, arrastado pelo chão da fábrica. Cada passo deixa uma poça de aço líquido, e seu peso é quase impossível de mover.',
+    tactic: 'Lento como os outros pesados, mas o rastro de metal fundido torna perigoso ficar atrás dele. Force-o a mudar de direção para abrir espaço de manobra. Pode soltar coração ao morrer.',
+  },
+  titan: {
+    name: 'Titã da Fundição',
+    tagline: 'O golem de forja da Fundição — chefe do setor 6.',
+    lore: 'No coração da Fundição, onde o calor é tão intenso que o ar treme, o Titã espera. Não é uma criatura: é uma prensa viva, um amálgama de sucata e alma de fogo que alterna entre rajadas de metal derretido, pancadas que estremecem o chão e chuvas de orbes incandescentes.',
+    tactic: 'Três fases, três respostas: na forja orbital, desvie dos glóbulos em leque; na pancada, o Titã envia ondas de choque pelo chão — fique longe ou posicione-se nos vãos entre os anéis; na chuva de forja, orbes em expansão cobrem a arena — mova-se para as bordas do padrão. Abaixo de 35% de vida, tudo acelera e ele invoca Fagulhas durante a chuva de forja.',
+  },
 };
 
 const ENEMY_ORDER: readonly EnemyKind[] = [
@@ -292,6 +329,7 @@ const ENEMY_ORDER: readonly EnemyKind[] = [
   'glyph', 'needle', 'pylon', 'mine', 'monolith', 'archivist',
   'crystal', 'shard', 'flake', 'geyser', 'glacier', 'zero',
   'blight', 'vile', 'ooze', 'mite', 'fume', 'crawler', 'miasma',
+  'spark', 'cinder', 'cog', 'bellows', 'crusher', 'titan',
 ];
 
 function waveAvailability(kind: EnemyKind): string {
@@ -378,7 +416,25 @@ const enemyEntries: CodexEntry[] = ENEMY_ORDER.map((kind) => {
   if (kind === 'crawler') {
     stats.push({ label: 'Rastro de ácido', value: 'Poças de dano 0.3x a cada ~1.5s' });
   }
-  if (kind === 'tank' || kind === 'beetle' || kind === 'monolith' || kind === 'glacier') {
+  if (kind === 'spark') {
+    stats.push({ label: 'Poça de metal ao morrer', value: `Dano ${Math.round(spec.dmg * 0.35)}, dura 2s` });
+  }
+  if (kind === 'cinder') {
+    stats.push({ label: 'Glóbulo de metal (cria poça)', value: `Dano ${Math.round(spec.dmg * 0.7)} + poça de dano ${Math.round(spec.dmg * 0.6)} por 3.5s` });
+    stats.push({ label: 'Morte explosiva', value: '3 poças de fogo em leque' });
+  }
+  if (kind === 'cog') {
+    stats.push({ label: 'Velocidade da investida', value: '360' });
+    stats.push({ label: 'Fragmentos ao morrer', value: '6 projéteis em círculo' });
+  }
+  if (kind === 'bellows') {
+    stats.push({ label: 'Aura de calor passiva', value: `Dano de ${Math.round(spec.dmg * 0.12)}/s em raio 65px` });
+    stats.push({ label: 'Pulso de calor', value: `Dano ${Math.round(spec.dmg * 0.65)} em raio 190px` });
+  }
+  if (kind === 'crusher') {
+    stats.push({ label: 'Rastro de metal', value: 'Poças de dano 0.3x a cada ~1.5s' });
+  }
+  if (kind === 'tank' || kind === 'beetle' || kind === 'monolith' || kind === 'glacier' || kind === 'crusher') {
     stats.push({ label: 'Chance de soltar coração', value: pct(BAL.drops.heartChanceTank) });
   }
   if (kind === 'boss') {
@@ -411,6 +467,15 @@ const enemyEntries: CodexEntry[] = ENEMY_ORDER.map((kind) => {
     stats.push({ label: 'Dano por glóbulo ácido', value: String(Math.round(spec.dmg * 0.38)) });
     stats.push({ label: 'Cones de gás por ciclo', value: '4 (120° cada, 180° em fúria)' });
     stats.push({ label: 'Glóbulos por salva', value: '4 (6 em fúria)' });
+    stats.push({ label: 'Recompensa ao cair', value: `${BAL.drops.bossCoins[0]}-${BAL.drops.bossCoins[1]} moedas + 1 coração` });
+  }
+  if (kind === 'titan') {
+    stats.push({ label: 'Vida na 1ª aparição (onda 55)', value: String(Math.round((BAL.wave.bossHp(55) / 520) * spec.hp)) });
+    stats.push({ label: 'Dano por glóbulo de forja', value: String(Math.round(spec.dmg * 0.38)) });
+    stats.push({ label: 'Glóbulos por salva', value: '4 (6 em fúria)' });
+    stats.push({ label: 'Pancadas de choque por ciclo', value: '2 (3 em fúria)' });
+    stats.push({ label: 'Orbes na chuva de forja', value: '8 (12 em fúria)' });
+    stats.push({ label: 'Invoca em fúria', value: '3 Fagulhas por ciclo' });
     stats.push({ label: 'Recompensa ao cair', value: `${BAL.drops.bossCoins[0]}-${BAL.drops.bossCoins[1]} moedas + 1 coração` });
   }
 
@@ -608,7 +673,7 @@ const systemEntries: CodexEntry[] = [
     id: 'sectors',
     name: 'Setores',
     tagline: `A rota do Modo Solo — a cada ${SECTOR_LEN} ondas, um mundo novo.`,
-    lore: 'A cada dez ondas a partida viaja para um novo setor: outro cenário, outra trilha sonora, outros inimigos e um chefe próprio. O Campo da Ruína é só a porta de entrada: na onda 11, a Colmeia acorda; na onda 21, o Arquivo Magnético abre seus trilhos.',
+    lore: 'A cada dez ondas a partida viaja para um novo setor: outro cenário, outra trilha sonora, outros inimigos e um chefe próprio. O Campo da Ruína é só a porta de entrada: na onda 11, a Colmeia acorda; na onda 21, o Arquivo Magnético abre seus trilhos; na onda 31, a Estação Gélida congela o campo; na onda 41, a Zona Tóxica corrompe tudo; na onda 51, a Fundição acende suas forjas.',
     tactic: 'Cada setor tem seu próprio ecossistema de ameaças; as táticas que funcionavam no anterior podem não bastar. Quando a rota chega ao fim, ela recomeça do início — mas os inimigos voltam muito mais fortes.',
     accent: '#9dff2e',
     icon: paintIcon('thrusters', '#9dff2e', 48),

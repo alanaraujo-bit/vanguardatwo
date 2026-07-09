@@ -258,7 +258,58 @@ export const TOXICA: SectorDef = {
   },
 };
 
-export const SECTORS: readonly SectorDef[] = [RUINA, COLMEIA, ARQUIVO, GELIDA, TOXICA];
+export const FUNDICA: SectorDef = {
+  id: 'fundica',
+  name: 'A FUNDIÇÃO',
+  subtitle: 'O ferro e o fogo da Ruína',
+  accent: '#ff6b35',
+  composition: [
+    { kind: 'spark', weight: 9, from: 1, decay: 0.18, floor: 4 },
+    { kind: 'cinder', weight: 5, from: 1 },
+    { kind: 'cog', weight: 4.5, from: 2 },
+    { kind: 'bellows', weight: 3.5, from: 3 },
+    { kind: 'crusher', weight: 3, from: 5 },
+  ],
+  boss: {
+    kind: 'titan',
+    name: 'Titã da Fundição',
+    warnSub: 'O AQUECIMENTO CHEGOU AO MÁXIMO',
+    defeatTitle: 'TITÃ DESMANTELADO',
+    defeatSub: 'A forja esfria... por enquanto',
+  },
+  background: {
+    gradient: ['#0d0805', '#120a06', '#080604'],
+    nebulas: ['rgba(255, 80, 20, 0.4)', 'rgba(200, 50, 0, 0.35)', 'rgba(80, 20, 0, 0.45)'],
+    star: '#ff9944',
+    grid: 'rgba(200, 100, 30, 0.08)',
+    gridStyle: 'hex',
+  },
+  // C# Dorian — dark industrial: driving, metallic, relentless.
+  music: {
+    bpm: 138,
+    bass: [69.3, 77.8, 69.3, 92.5],
+    chords: [
+      [277.18, 369.99, 415.3],
+      [311.13, 369.99, 466.16],
+      [369.99, 440, 554.37],
+      [415.3, 493.88, 554.37],
+    ],
+    lead: 'sawtooth',
+    bossMusic: {
+      bpm: 150,
+      bass: [69.3, 69.3, 92.5, 77.8],
+      chords: [
+        [277.18, 369.99, 415.3, 554.37],
+        [311.13, 369.99, 466.16, 554.37],
+        [369.99, 440, 554.37, 740],
+        [415.3, 493.88, 554.37, 659.25],
+      ],
+      lead: 'square',
+    },
+  },
+};
+
+export const SECTORS: readonly SectorDef[] = [RUINA, COLMEIA, ARQUIVO, GELIDA, TOXICA, FUNDICA];
 
 /** 0-based campaign position — keeps counting up when sectors cycle. */
 export function sectorIndexForWave(wave: number): number {

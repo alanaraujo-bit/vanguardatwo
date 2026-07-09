@@ -6,6 +6,7 @@ import {
   ARCHIVIST_POINTS, DART_POINTS, GLYPH_POINTS, MINE_POINTS, NEEDLE_POINTS, QUEEN_POINTS, STINGER_POINTS,
   SHARD_POINTS, FLAKE_POINTS, GEYSER_POINTS, GLACIER_POINTS, ZERO_POINTS,
   FUME_POINTS, MIASMA_POINTS,
+  CINDER_POINTS, BELLOWS_POINTS, TITAN_POINTS,
   type ShapePoints, type Sprite,
 } from '../fx/sprites';
 import { BAL } from './balance';
@@ -17,11 +18,12 @@ export type EnemyKind =
   | 'larva' | 'spore' | 'stinger' | 'weaver' | 'beetle' | 'queen'
   | 'glyph' | 'needle' | 'pylon' | 'mine' | 'monolith' | 'archivist'
   | 'crystal' | 'shard' | 'flake' | 'geyser' | 'glacier' | 'zero'
-  | 'blight' | 'vile' | 'ooze' | 'mite' | 'fume' | 'crawler' | 'miasma';
+  | 'blight' | 'vile' | 'ooze' | 'mite' | 'fume' | 'crawler' | 'miasma'
+  | 'spark' | 'cinder' | 'cog' | 'bellows' | 'crusher' | 'titan';
 
 /** Boss-class units: fill the boss HP bar, gate wave progression, drop boss loot. */
 export function isBossKind(kind: EnemyKind): boolean {
-  return kind === 'boss' || kind === 'queen' || kind === 'archivist' || kind === 'zero' || kind === 'miasma';
+  return kind === 'boss' || kind === 'queen' || kind === 'archivist' || kind === 'zero' || kind === 'miasma' || kind === 'titan';
 }
 
 export interface Spec {
@@ -71,6 +73,13 @@ export const SPECS: Record<EnemyKind, Spec> = {
   fume:     { hp: 26,  speed: 34,  dmg: 7,  radius: 12, xp: 2, score: 30,  color: '#b8ff50' },
   crawler:  { hp: 135, speed: 24,  dmg: 22, radius: 23, xp: 5, score: 55,  color: '#ff6b35' },
   miasma:   { hp: 700, speed: 45,  dmg: 28, radius: 48, xp: 34, score: 900, color: '#4dff4d' },
+  // — Setor 6: A Fundição —
+  spark:    { hp: 14,  speed: 125, dmg: 5,  radius: 8,  xp: 1, score: 12,  color: '#ff8533' },
+  cinder:   { hp: 26,  speed: 38,  dmg: 9,  radius: 12, xp: 2, score: 24,  color: '#ff4444' },
+  cog:      { hp: 20,  speed: 105, dmg: 10, radius: 10, xp: 2, score: 28,  color: '#b0b0b0' },
+  bellows:  { hp: 30,  speed: 30,  dmg: 7,  radius: 14, xp: 2, score: 32,  color: '#ff6b00' },
+  crusher:  { hp: 145, speed: 22,  dmg: 24, radius: 24, xp: 5, score: 60,  color: '#5a4a3a' },
+  titan:    { hp: 820, speed: 44,  dmg: 30, radius: 50, xp: 38, score: 1100, color: '#ff4500' },
 };
 
 interface ShapeOpts { sides?: number; points?: ShapePoints; rotate?: number; innerDetail?: boolean; }
@@ -110,6 +119,13 @@ export const ENEMY_SHAPE_OPTS: Record<EnemyKind, ShapeOpts> = {
   fume:     { points: FUME_POINTS, innerDetail: true },
   crawler:  { sides: 6, innerDetail: true },
   miasma:   { points: MIASMA_POINTS, innerDetail: true },
+  // — Setor 6: A Fundição —
+  spark:    { sides: 4, rotate: Math.PI / 4 },
+  cinder:   { points: CINDER_POINTS, innerDetail: true },
+  cog:      { sides: 8, innerDetail: true },
+  bellows:  { points: BELLOWS_POINTS, innerDetail: true },
+  crusher:  { sides: 6, innerDetail: true },
+  titan:    { points: TITAN_POINTS, innerDetail: true },
 };
 
 // Colosso phases
@@ -148,6 +164,15 @@ const Z_BEAM = 2;
 // Miasma phases: orbit + acid globs, root + gas vent.
 const M_ORBIT = 0;
 const M_VENT = 1;
+
+// Cog phases: seek player, then roll charge
+const CG_SEEK = 0;
+const CG_ROLL = 1;
+
+// Titan phases: forge orbit, ground slam, forge rain
+const T_ORBIT = 0;
+const T_SLAM = 1;
+const T_FORGE = 2;
 
 export class Enemy {
   /** Network identity for snapshot interpolation; inert in solo play. */
@@ -643,8 +668,24 @@ export class Enemies {
       case 'crawler':
         this.steerCrawler(e, dt, world, nx, ny);
         break;
-      case 'miasma':
-        this.steerMiasma(e, dt, world, nx, ny, d);
+      // — Setor 6: A Fundição —
+      case 'spark':
+        this.steerSpark(e, dt, world, nx, ny);
+        break;
+      case 'cinder':
+        this.steerCinder(e, dt, world, nx, ny, d);
+        break;
+      case 'cog':
+        this.steerCog(e, dt, world, nx, ny, d);
+        break;
+      case 'bellows':
+        this.steerBellows(e, dt, world, nx, ny, d);
+        break;
+      case 'crusher':
+        this.steerCrusher(e, dt, world, nx, ny);
+        break;
+      case 'titan':
+        this.steerTitan(e, dt, world, nx, ny, d);
         break;
     }
   }
@@ -1150,12 +1191,236 @@ export class Enemies {
     }
   }
 
+  // ——— Setor 6: A Fundição ———
+
+  private steerSpark(e: Enemy, dt: number, world: World, nx: number, ny: number): void {
+    // Erratic skitter: fast spark with random jolts and oscillation.
+    const weave = Math.sin(e.t * 6 + e.seed) * 50;
+    const joltX = Math.sin(e.t * 14 + e.seed * 7) > 0.88 ? Math.cos(e.seed * 2) * 140 : 0;
+    const joltY = Math.sin(e.t * 16 + e.seed * 3) > 0.88 ? Math.sin(e.seed * 2) * 140 : 0;
+    e.vx += ((nx * e.speed + joltX - ny * weave) - e.vx) * damp(7, dt);
+    e.vy += ((ny * e.speed + joltY + nx * weave) - e.vy) * damp(7, dt);
+    e.rot = Math.atan2(e.vy, e.vx);
+  }
+
+  private steerCinder(e: Enemy, dt: number, world: World, nx: number, ny: number, d: number): void {
+    // Slow, keeps distance. Fires molten orbs that leave fire patches.
+    let tx = 0;
+    let ty = 0;
+    if (d > 260) {
+      tx = nx * e.speed;
+      ty = ny * e.speed;
+    } else if (d < 180) {
+      tx = -nx * e.speed;
+      ty = -ny * e.speed;
+    }
+    e.vx += (tx - e.vx) * damp(2.2, dt);
+    e.vy += (ty - e.vy) * damp(2.2, dt);
+    e.rot += dt * 0.7;
+    e.fireT -= dt;
+    if (e.fireT <= 0 && d < 350) {
+      e.fireT = rand(2.5, 3.3);
+      const aim = Math.atan2(ny, nx);
+      world.enemyShots.spawnAcid(e.x, e.y, aim + rand(-0.12, 0.12), 140, e.dmg * 0.7, 2.5);
+      world.audio.play('sizzle');
+    }
+  }
+
+  private steerCog(e: Enemy, dt: number, world: World, nx: number, ny: number, d: number): void {
+    // Rolling gear: seeks player, then charges in a fast burst.
+    e.rot += dt * 2.4; // Always spinning — consistent visual in both phases.
+    switch (e.phase) {
+      case CG_SEEK:
+        e.vx += (nx * e.speed - e.vx) * damp(5, dt);
+        e.vy += (ny * e.speed - e.vy) * damp(5, dt);
+        e.fireT -= dt;
+        if (e.fireT <= 0 && d < 350) {
+          e.phase = CG_ROLL;
+          e.phaseT = 0;
+          e.vx = nx * 360;
+          e.vy = ny * 360;
+          e.flash = 0.05;
+          world.audio.play('clang');
+        }
+        break;
+      case CG_ROLL:
+        if (e.phaseT > 0.5) {
+          e.phase = CG_SEEK;
+          e.phaseT = 0;
+          e.fireT = rand(1.5, 2.5);
+        }
+        break;
+    }
+    e.phaseT += dt;
+  }
+
+  private steerBellows(e: Enemy, dt: number, world: World, nx: number, ny: number, d: number): void {
+    // Slow drift with gentle bob. Pulses heat damage in an expanding ring.
+    const wob = Math.sin(e.t * 1.6 + e.seed) * 14;
+    let tx = -ny * Math.sin(e.seed) * e.speed * 0.35;
+    let ty = nx * Math.sin(e.seed) * e.speed * 0.35;
+    if (d > 350) {
+      tx += nx * e.speed * 0.5;
+      ty += ny * e.speed * 0.5;
+    } else if (d < 160) {
+      tx -= nx * e.speed * 0.5;
+      ty -= ny * e.speed * 0.5;
+    }
+    e.vx += ((tx + -ny * wob) - e.vx) * damp(1.6, dt);
+    e.vy += ((ty + nx * wob) - e.vy) * damp(1.6, dt);
+    e.rot += dt * 0.6;
+
+    // Passive heat aura.
+    for (const p of world.players) {
+      if (p.dead) continue;
+      const pd = len(p.x - e.x, p.y - e.y);
+      if (pd < 65) {
+        p.takeDamage(e.dmg * 0.12 * dt, world);
+      }
+    }
+
+    // Pulse attack: expanding heat ring.
+    e.fireT -= dt;
+    if (e.fireT <= 0) {
+      e.fireT = rand(3, 4.5);
+      for (const p of world.players) {
+        if (p.dead) continue;
+        const pd = len(p.x - e.x, p.y - e.y);
+        if (pd < 190) {
+          p.takeDamage(e.dmg * 0.65, world);
+        }
+      }
+      world.particles.ring(e.x, e.y, SPECS.bellows.color, 14, 190, 0.5, 4);
+      world.audio.play('slam');
+    }
+  }
+
+  private steerCrusher(e: Enemy, dt: number, world: World, nx: number, ny: number): void {
+    // Very slow heavy. Drops molten pools as it moves.
+    e.vx += (nx * e.speed - e.vx) * damp(1.4, dt);
+    e.vy += (ny * e.speed - e.vy) * damp(1.4, dt);
+    e.rot -= dt * 0.25;
+    e.fireT -= dt;
+    const moving = len(e.vx, e.vy) > 1;
+    if (e.fireT <= 0 && moving) {
+      e.fireT = rand(1.5, 2.2);
+      world.enemyShots.spawnPatch(e.x + rand(-6, 6), e.y + rand(-6, 6), e.dmg * 0.3, 3.5);
+      world.audio.play('sizzle');
+    }
+  }
+
+  private steerTitan(e: Enemy, dt: number, world: World, nx: number, ny: number, d: number): void {
+    e.rot += dt * 0.35;
+    e.phaseT += dt;
+    const enrage = e.hp < e.maxHp * 0.35 ? 0.6 : 1;
+
+    switch (e.phase) {
+      // — Phase 1: Forja Orbital — orbit + fire molten orbs in fan —
+      case T_ORBIT: {
+        const side = Math.sin(e.seed) >= 0 ? 1 : -1;
+        let tx = -ny * side * e.speed * 0.9;
+        let ty = nx * side * e.speed * 0.9;
+        if (d > 300) {
+          tx += nx * e.speed;
+          ty += ny * e.speed;
+        } else if (d < 200) {
+          tx -= nx * e.speed;
+          ty -= ny * e.speed;
+        }
+        e.vx += (tx - e.vx) * damp(2.4, dt);
+        e.vy += (ty - e.vy) * damp(2.4, dt);
+        e.fireT -= dt;
+        if (e.fireT <= 0) {
+          e.fireT = rand(0.7, 1.1) * enrage;
+          const aim = Math.atan2(ny, nx);
+          const count = enrage < 1 ? 6 : 4;
+          for (let i = 0; i < count; i++) {
+            const spread = (i - (count - 1) / 2) * 0.14;
+            world.enemyShots.spawnAcid(e.x + Math.cos(aim) * e.radius, e.y + Math.sin(aim) * e.radius, aim + spread + rand(-0.05, 0.05), 150, e.dmg * 0.38, 2.5);
+          }
+          world.audio.play('sizzle');
+        }
+        if (e.phaseT > 3.5 * enrage) {
+          e.phase = T_SLAM;
+          e.phaseT = 0;
+          e.volleys = 0;
+        }
+        break;
+      }
+      // — Phase 2: Pancada — stop, telegraph, shockwaves —
+      case T_SLAM: {
+        e.vx *= 1 - Math.min(1, 5 * dt);
+        e.vy *= 1 - Math.min(1, 5 * dt);
+        e.flash = 0.05;
+        if (e.phaseT > 0.6 * enrage && e.volleys < 3) {
+          e.phaseT = 0;
+          e.volleys++;
+          const slamCount = enrage < 1 ? 3 : 2;
+          for (const p of world.players) {
+            if (p.dead) continue;
+            for (let r = 0; r < slamCount; r++) {
+              const dist = 80 + r * 100;
+              const pd = len(p.x - e.x, p.y - e.y);
+              if (Math.abs(pd - dist) < 60) {
+                p.takeDamage(e.dmg * 0.35, world);
+              }
+            }
+          }
+          world.particles.ring(e.x, e.y, SPECS.titan.color, 20, 130, 0.6, 5);
+          world.audio.play('slam');
+        }
+        if (e.volleys >= 3 && e.phaseT > 0.8 * enrage) {
+          e.phase = T_FORGE;
+          e.phaseT = 0;
+          e.volleys = 0;
+        }
+        break;
+      }
+      // — Phase 3: Chuva de Forja — expanding ring of molten orbs —
+      case T_FORGE: {
+        e.vx *= 1 - Math.min(1, 4 * dt);
+        e.vy *= 1 - Math.min(1, 4 * dt);
+        e.fireT -= dt;
+        if (e.fireT <= 0) {
+          e.fireT = 0.3 * enrage;
+          const count = enrage < 1 ? 12 : 8;
+          const offset = rand(0, TAU);
+          for (let i = 0; i < count; i++) {
+            const a = offset + (i / count) * TAU;
+            world.enemyShots.spawnAcid(e.x + Math.cos(a) * (e.radius + 10), e.y + Math.sin(a) * (e.radius + 10), a, 120, e.dmg * 0.32, 2);
+          }
+          world.audio.play('slam');
+        }
+        // Enrage: also spawn sparks.
+        if (enrage < 1) {
+          e.bladeCd -= dt;
+          if (e.bladeCd <= 0) {
+            e.bladeCd = 4;
+            const hpMul = e.maxHp / SPECS.titan.hp;
+            const dmgMul = e.dmg / SPECS.titan.dmg;
+            for (let i = 0; i < 3; i++) {
+              const a = rand(0, TAU);
+              this.pendingSpawn.push({ kind: 'spark', x: e.x + Math.cos(a) * e.radius, y: e.y + Math.sin(a) * e.radius, hpMul, dmgMul });
+            }
+            world.particles.ring(e.x, e.y, SPECS.titan.color, 12, 300, 0.4, 4);
+          }
+        }
+        if (e.phaseT > 3 * enrage) {
+          e.phase = T_ORBIT;
+          e.phaseT = 0;
+          e.fireT = 0;
+        }
+        break;
+      }
+    }
+  }
+
   damage(e: Enemy, amount: number, crit: boolean, kx: number, ky: number, world: World, killer: Player | null = null): void {
     if (e.dead) return;
     e.hp -= amount;
     e.flash = 0.09;
     // Heavy units and bosses resist knockback.
-    const resist = e.kind === 'tank' || e.kind === 'beetle' || e.kind === 'monolith' || e.kind === 'crawler' ? 0.35 : isBossKind(e.kind) ? 0.08 : 1;
+    const resist = e.kind === 'tank' || e.kind === 'beetle' || e.kind === 'monolith' || e.kind === 'crawler' || e.kind === 'crusher' ? 0.35 : isBossKind(e.kind) ? 0.08 : 1;
     e.kvx += kx * resist;
     e.kvy += ky * resist;
     world.floaters.spawn(e.x, e.y - e.radius - 4, String(Math.round(amount)), {
@@ -1280,7 +1545,7 @@ export class Enemies {
     if (big) world.shake(8);
 
     // Loot
-    const heavy = e.kind === 'tank' || e.kind === 'beetle' || e.kind === 'monolith' || e.kind === 'glacier' || e.kind === 'crawler';
+    const heavy = e.kind === 'tank' || e.kind === 'beetle' || e.kind === 'monolith' || e.kind === 'glacier' || e.kind === 'crawler' || e.kind === 'crusher';
     world.pickups.spawnGems(e.x, e.y, e.xp);
     if (isBossKind(e.kind)) {
       world.pickups.spawnCoins(e.x, e.y, randInt(BAL.drops.bossCoins[0], BAL.drops.bossCoins[1]));
@@ -1328,6 +1593,31 @@ export class Enemies {
       }
       world.particles.ring(e.x, e.y, SPECS.vile.color, 8, 60, 0.5, 3);
       world.audio.play('hiss');
+    }
+
+    if (e.kind === 'spark') {
+      // Leaves a small fire pool on death.
+      world.enemyShots.spawnPatch(e.x, e.y, e.dmg * 0.35, 2);
+    }
+
+    if (e.kind === 'cinder') {
+      // Erupts into 3 fire pools in a fan.
+      for (let i = -1; i <= 1; i++) {
+        const a = Math.atan2(e.vy, e.vx) + i * 0.4;
+        world.enemyShots.spawnPatch(e.x + Math.cos(a) * 10, e.y + Math.sin(a) * 10, e.dmg * 0.4, 3);
+      }
+      world.particles.ring(e.x, e.y, SPECS.cinder.color, 8, 60, 0.5, 3);
+      world.audio.play('sizzle');
+    }
+
+    if (e.kind === 'cog') {
+      // Shatters into 6 metal fragments.
+      const offset = rand(0, TAU);
+      for (let i = 0; i < 6; i++) {
+        const a = offset + (i / 6) * TAU;
+        world.enemyShots.spawn(e.x, e.y, a, 170, e.dmg * 0.45);
+      }
+      world.audio.play('clang');
     }
 
     if (e.kind === 'ooze') {
