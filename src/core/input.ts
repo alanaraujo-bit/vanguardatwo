@@ -5,12 +5,21 @@ const STICK_RADIUS = 46;
 const DEAD_ZONE = 5;
 /** 'bottomHalf' pad: how far a touch may land from the anchor and still grab the stick. Generous, so thumbs don't need to look. */
 const FIXED_HIT_RADIUS = 72;
-const FIXED_RING_RADIUS = 50;
+/** Exported so the HUD-customization editor (ui.ts) can draw a same-size preview and clamp it on-screen. */
+export const FIXED_RING_RADIUS = 50;
 const FIXED_KNOB_TRAVEL = 36;
 const FIXED_KNOB_RADIUS = 16;
 const FLOAT_RING_RADIUS = 44;
 const FLOAT_KNOB_TRAVEL = 34;
 const FLOAT_KNOB_RADIUS = 13;
+
+/** Bottom clearance for the default 'bottomHalf' anchor, clear of the boss bar (drawn ~63px above safe-bottom). */
+export const STICK_ANCHOR_MARGIN = 126;
+
+/** Default 'bottomHalf' pad position (bottom-center) when the player hasn't set a custom one. */
+export function defaultStickAnchor(vpW: number, vpH: number, safeBottom: number): { x: number; y: number } {
+  return { x: vpW / 2, y: vpH - safeBottom - STICK_ANCHOR_MARGIN };
+}
 
 /** True while the event targets a text field (name entry, login forms). */
 export function isTyping(e: Event): boolean {

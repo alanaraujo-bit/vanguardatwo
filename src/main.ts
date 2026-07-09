@@ -1,5 +1,5 @@
 import { Game } from './core/game';
-import { Input, isTyping } from './core/input';
+import { defaultStickAnchor, Input, isTyping } from './core/input';
 import { SaveSystem } from './core/save';
 import { Viewport } from './core/viewport';
 import { AudioEngine } from './audio/audio';
@@ -21,20 +21,22 @@ const vp = new Viewport(canvas);
 const input = new Input(canvas);
 const game = new Game(canvas, vp, input);
 
-/** Bottom clearance for the fixed-pad anchor, clear of the boss bar (drawn ~63px above safe-bottom). */
-const STICK_ANCHOR_MARGIN = 126;
-function syncStickAnchor(): void {
-  input.anchorX = vp.w / 2;
-  input.anchorY = vp.h - vp.safeBottom - STICK_ANCHOR_MARGIN;
-}
-vp.onResize(syncStickAnchor);
-syncStickAnchor();
-
 const save = new SaveSystem();
 save.load();
 session.init(save);
 sync.init(save);
 storeSync.init(save);
+
+function syncStickAnchor(): void {
+  const custom = save.data.settings.joystickAnchor;
+  const { x, y } = custom
+    ? { x: custom.x * vp.w, y: custom.y * vp.h }
+    : defaultStickAnchor(vp.w, vp.h, vp.safeBottom);
+  input.anchorX = x;
+  input.anchorY = y;
+}
+vp.onResize(syncStickAnchor);
+syncStickAnchor();
 
 const audio = new AudioEngine();
 const music = new Music(audio);
@@ -83,6 +85,7 @@ function applySettings(): void {
   audio.musicOn = cfg.music;
   audio.hapticsOn = cfg.haptics;
   input.scheme = cfg.controlScheme;
+  syncStickAnchor();
   music.sync();
   applyGraphicsSettings();
 }
@@ -338,7 +341,7 @@ const actions: UiActions = {
   applySettings,
 };
 
-const ui = new UI(save, audio, actions);
+const ui = new UI(save, audio, actions, vp);
 
 applySettings();
 music.setMode('menu');

@@ -86,6 +86,15 @@ export const S = {
   controlSchemeBottomHalf: 'ANALÓGICO FIXO',
   controlSchemeFreeDesc: 'Toque em qualquer lugar da tela e arraste para mover.',
   controlSchemeBottomHalfDesc: 'Um analógico discreto fica sempre visível, centralizado na parte de baixo da tela. Toque nele para mover — sempre no mesmo lugar.',
+  hudSettings: 'HUD',
+  hudSettingsDesc: 'Personalize a posição do analógico na tela',
+  hudJoystickPosition: 'Posição do analógico',
+  hudJoystickPositionDesc: 'Arraste o analógico para onde quiser e solte. Vale só para o modo "Analógico fixo" em Controles.',
+  hudEditBtn: 'ARRASTAR PARA POSICIONAR',
+  hudEditHint: 'Arraste o analógico até a posição desejada',
+  hudEditDone: 'CONCLUÍDO',
+  hudResetPosition: 'Restaurar posição padrão',
+  hudCustomBadge: 'Personalizado',
 
   // ————— tutorial guiado —————
   tutSkip: 'PULAR TUTORIAL',

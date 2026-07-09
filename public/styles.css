@@ -720,6 +720,61 @@ html, body {
   mask-image: none;
 }
 
+/* ————— HUD: editor de posição do analógico ————— */
+
+.hud-pos-row { align-items: center; }
+.hud-edit-hint {
+  margin-top: 4px;
+  text-align: center;
+}
+.hud-edit-footer {
+  max-width: 340px;
+  margin-top: auto;
+}
+
+/* Real position:fixed element appended straight to #ui (not inside .screen,
+   which is transformed pre-.on) so its px coordinates match clientX/clientY
+   exactly — the same space Input uses for anchorX/anchorY. */
+.hud-edit-pad {
+  display: none;
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 144px;
+  height: 144px;
+  transform: translate(-50%, -50%);
+  align-items: center;
+  justify-content: center;
+  z-index: 6;
+  touch-action: none;
+  cursor: grab;
+  pointer-events: auto;
+}
+.hud-edit-pad.on { display: flex; }
+.hud-edit-pad.dragging { cursor: grabbing; }
+.hud-edit-ring {
+  position: absolute;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: rgba(53, 240, 255, 0.14);
+  border: 2px solid rgba(53, 240, 255, 0.55);
+  transition: box-shadow 0.15s;
+}
+.hud-edit-pad.dragging .hud-edit-ring {
+  box-shadow: 0 0 22px var(--cyan-dim);
+  border-color: var(--cyan);
+}
+.hud-edit-knob {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--cyan);
+  opacity: 0.85;
+  box-shadow: 0 0 10px var(--cyan-dim);
+}
+
 /* ————— contador de FPS (diagnóstico, opt-in) ————— */
 
 .fps-counter {

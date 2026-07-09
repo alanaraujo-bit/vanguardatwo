@@ -9,6 +9,12 @@ export type FpsCap = 0 | 30 | 60;
  */
 export type ControlScheme = 'free' | 'bottomHalf';
 
+/** Normalized [0,1] position of the 'bottomHalf' stick anchor, from the top-left of the viewport. */
+export interface JoystickAnchor {
+  x: number;
+  y: number;
+}
+
 export interface GraphicsSettings {
   preset: GraphicsPreset;
   /** Multiplica o devicePixelRatio em Viewport.resize(). 0.5–1. */
@@ -35,6 +41,8 @@ export interface Settings {
   lowFx: boolean;
   graphics: GraphicsSettings;
   controlScheme: ControlScheme;
+  /** Custom position for the 'bottomHalf' stick anchor. null = default (bottom-center). */
+  joystickAnchor: JoystickAnchor | null;
 }
 
 const GRAPHICS_PRESETS: Record<Exclude<GraphicsPreset, 'custom'>, Omit<GraphicsSettings, 'preset'>> = {
@@ -154,7 +162,7 @@ function defaults(): SaveData {
     meta: {},
     settings: {
       sfx: true, music: true, haptics: true, lowFx: false,
-      graphics: detectGraphicsPreset(), controlScheme: 'free',
+      graphics: detectGraphicsPreset(), controlScheme: 'free', joystickAnchor: null,
     },
     campaignLevel: 1,
     campaignStars: {},
@@ -183,6 +191,12 @@ function parse(raw: string): SaveData {
     : parsed.settings?.lowFx === true
       ? applyPreset('low')
       : detectGraphicsPreset();
+  const savedAnchor = parsed.settings?.joystickAnchor;
+  const joystickAnchor: JoystickAnchor | null =
+    savedAnchor && typeof savedAnchor.x === 'number' && typeof savedAnchor.y === 'number'
+      && Number.isFinite(savedAnchor.x) && Number.isFinite(savedAnchor.y)
+      ? { x: Math.min(1, Math.max(0, savedAnchor.x)), y: Math.min(1, Math.max(0, savedAnchor.y)) }
+      : null;
   const data: SaveData = {
     ...base,
     ...parsed,
@@ -195,7 +209,7 @@ function parse(raw: string): SaveData {
     achievements: (parsed.achievements && typeof parsed.achievements === 'object' && !Array.isArray(parsed.achievements))
       ? { ...(parsed.achievements as Record<string, number>) }
       : {},
-    settings: { ...base.settings, ...(parsed.settings ?? {}), graphics },
+    settings: { ...base.settings, ...(parsed.settings ?? {}), graphics, joystickAnchor },
   };
   // v1 → v2: veterans never see the forced onboarding flow.
   if ((parsed.v ?? 1) < 2) {

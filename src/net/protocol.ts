@@ -1,4 +1,4 @@
-import { applyPreset, type BackgroundQuality, type ControlScheme, type FpsCap, type GraphicsPreset, type GraphicsSettings, type SaveData, type Settings } from '../core/save.js';
+import { applyPreset, type BackgroundQuality, type ControlScheme, type FpsCap, type GraphicsPreset, type GraphicsSettings, type JoystickAnchor, type SaveData, type Settings } from '../core/save.js';
 import { META_DEFS } from '../game/meta.js';
 
 /**
@@ -194,6 +194,13 @@ function limitRecord(rec: Record<string, number>, max: number): Record<string, n
   return out;
 }
 
+function clampJoystickAnchor(a: unknown): JoystickAnchor | null {
+  if (!a || typeof a !== 'object') return null;
+  const o = a as Partial<JoystickAnchor>;
+  if (typeof o.x !== 'number' || typeof o.y !== 'number' || !Number.isFinite(o.x) || !Number.isFinite(o.y)) return null;
+  return { x: clampNum(o.x, 0, 1, 0.5), y: clampNum(o.y, 0, 1, 0.5) };
+}
+
 /** Untrusted payload from the network — never trust it wholesale, clamp field by field. */
 function clampGraphics(g: unknown): GraphicsSettings {
   const o = (g && typeof g === 'object' ? g : {}) as Partial<GraphicsSettings>;
@@ -229,6 +236,7 @@ export function clampSettings(raw: unknown): Settings | null {
     sfx: s.sfx !== false, music: s.music !== false, haptics: s.haptics !== false, lowFx: s.lowFx === true,
     graphics: clampGraphics(s.graphics),
     controlScheme: oneOf(s.controlScheme, CONTROL_SCHEME_IDS, 'free'),
+    joystickAnchor: clampJoystickAnchor(s.joystickAnchor),
   };
 }
 

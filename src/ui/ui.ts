@@ -1,5 +1,7 @@
+import { defaultStickAnchor, FIXED_RING_RADIUS } from '../core/input';
 import { applyPreset, type BackgroundQuality, type ControlScheme, type FpsCap, type GraphicsPreset, type SaveSystem } from '../core/save';
 import { fmtTime } from '../core/utils';
+import type { Viewport } from '../core/viewport';
 import type { AudioEngine } from '../audio/audio';
 import { S } from '../i18n/strings';
 import { ACHIEVEMENT_DEFS } from '../game/achievements';
@@ -105,6 +107,7 @@ export class UI {
   private readonly screens = new Map<string, HTMLElement>();
   private pauseBtn: HTMLElement | null = null;
   private fpsCounterEl: HTMLElement | null = null;
+  private hudEditPad: HTMLElement | null = null;
   private tutorial: HTMLElement | null = null;
   private tutBubble: HTMLElement | null = null;
   private tutBubbleTitle: HTMLElement | null = null;
@@ -121,6 +124,7 @@ export class UI {
     private readonly save: SaveSystem,
     private readonly audio: AudioEngine,
     private readonly actions: UiActions,
+    private readonly vp: Viewport,
   ) {
     const root = document.getElementById('ui');
     if (!root) throw new Error('#ui não encontrado');
@@ -172,6 +176,7 @@ export class UI {
   hideAll(): void {
     for (const s of this.screens.values()) s.classList.remove('on');
     this.current = null;
+    this.hudEditPad?.classList.remove('on');
   }
 
   /** Re-render the main menu if it is what's on screen (login state changed). */
@@ -867,6 +872,7 @@ export class UI {
     list.appendChild(this.settingsCategoryRow(S.audioSettings, S.audioSettingsDesc, () => this.showAudioSettings()));
     list.appendChild(this.settingsCategoryRow(S.graphicsSettings, S.graphicsSettingsDesc, () => this.showGraphicsSettings()));
     list.appendChild(this.settingsCategoryRow(S.controlsSettings, S.controlsSettingsDesc, () => this.showControlsSettings()));
+    list.appendChild(this.settingsCategoryRow(S.hudSettings, S.hudSettingsDesc, () => this.showHudSettings()));
     s.appendChild(list);
 
     const info = el('div', 'subheading stats-line',
@@ -930,6 +936,133 @@ export class UI {
     s.appendChild(el('div', 'subheading preset-custom-note', desc));
 
     this.open('controlssettings');
+  }
+
+  showHudSettings(): void {
+    this.hideAll();
+    const s = this.screen('hudsettings');
+    const cfg = this.save.data.settings;
+
+    const header = el('div', 'row header');
+    header.appendChild(this.btn(`‹ ${S.back}`, 'ghost small', () => this.showSettings()));
+    s.appendChild(header);
+
+    s.appendChild(el('h2', 'heading', S.hudSettings));
+
+    const row = el('div', 'panel toggle-row hud-pos-row');
+    const body = el('div', 'grow');
+    body.appendChild(el('div', 'item-name', S.hudJoystickPosition));
+    body.appendChild(el('div', 'item-desc', S.hudJoystickPositionDesc));
+    row.appendChild(body);
+    s.appendChild(row);
+    if (cfg.joystickAnchor) {
+      s.appendChild(el('div', 'subheading preset-custom-note', S.hudCustomBadge));
+    }
+
+    const col = el('div', 'col actions');
+    col.appendChild(this.btn(S.hudEditBtn, 'primary', () => this.showHudEdit()));
+    if (cfg.joystickAnchor) {
+      col.appendChild(this.btn(S.hudResetPosition, 'ghost', () => {
+        cfg.joystickAnchor = null;
+        this.save.persist();
+        this.actions.applySettings();
+        this.showHudSettings();
+      }));
+    }
+    s.appendChild(col);
+
+    this.open('hudsettings');
+  }
+
+  /**
+   * Full-screen live drag editor for the 'bottomHalf' stick anchor: the pad
+   * is a real position:fixed element (appended straight to #ui, not inside
+   * the transformed `.screen` div, so its coordinates line up 1:1 with
+   * clientX/clientY — the same space Input/main.ts use for anchorX/anchorY).
+   */
+  private showHudEdit(): void {
+    this.hideAll();
+    const s = this.screen('hudedit');
+
+    const header = el('div', 'row header');
+    header.appendChild(this.btn(`‹ ${S.back}`, 'ghost small', () => this.showHudSettings()));
+    s.appendChild(header);
+
+    s.appendChild(el('div', 'subheading hud-edit-hint', S.hudEditHint));
+
+    const footer = el('div', 'row gap hud-edit-footer');
+    footer.appendChild(this.btn(S.hudResetPosition, 'ghost small grow', () => {
+      this.save.data.settings.joystickAnchor = null;
+      this.save.persist();
+      this.actions.applySettings();
+      this.placeHudEditPad(defaultStickAnchor(this.vp.w, this.vp.h, this.vp.safeBottom));
+    }));
+    footer.appendChild(this.btn(S.hudEditDone, 'primary small grow', () => this.showHudSettings()));
+    s.appendChild(footer);
+
+    const cfg = this.save.data.settings;
+    const initial = cfg.joystickAnchor
+      ? { x: cfg.joystickAnchor.x * this.vp.w, y: cfg.joystickAnchor.y * this.vp.h }
+      : defaultStickAnchor(this.vp.w, this.vp.h, this.vp.safeBottom);
+    this.placeHudEditPad(initial);
+    this.ensureHudEditPad().classList.add('on');
+
+    this.open('hudedit');
+  }
+
+  /** Keeps the pad clear of the screen edges/notches and of the editor's own header/footer chrome. */
+  private clampHudEditPos(x: number, y: number): { x: number; y: number } {
+    const margin = FIXED_RING_RADIUS + 8;
+    const topClear = this.vp.safeTop + 110;
+    const bottomClear = this.vp.h - this.vp.safeBottom - 110;
+    return {
+      x: Math.min(Math.max(x, margin), Math.max(margin, this.vp.w - margin)),
+      y: Math.min(Math.max(y, topClear), Math.max(topClear, bottomClear)),
+    };
+  }
+
+  private placeHudEditPad(pos: { x: number; y: number }): void {
+    const pad = this.ensureHudEditPad();
+    const clamped = this.clampHudEditPos(pos.x, pos.y);
+    pad.style.left = `${clamped.x}px`;
+    pad.style.top = `${clamped.y}px`;
+  }
+
+  private ensureHudEditPad(): HTMLElement {
+    if (this.hudEditPad) return this.hudEditPad;
+    const pad = el('div', 'hud-edit-pad');
+    pad.appendChild(el('span', 'hud-edit-ring'));
+    pad.appendChild(el('span', 'hud-edit-knob'));
+    this.root.appendChild(pad);
+    this.hudEditPad = pad;
+
+    let pointerId: number | null = null;
+    pad.addEventListener('pointerdown', (e) => {
+      if (pointerId !== null) return;
+      pointerId = e.pointerId;
+      pad.classList.add('dragging');
+      pad.setPointerCapture(e.pointerId);
+      this.audio.play('tap');
+    });
+    pad.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== pointerId) return;
+      this.placeHudEditPad({ x: e.clientX, y: e.clientY });
+    });
+    const release = (e: PointerEvent): void => {
+      if (e.pointerId !== pointerId) return;
+      pointerId = null;
+      pad.classList.remove('dragging');
+      this.save.data.settings.joystickAnchor = {
+        x: parseFloat(pad.style.left) / this.vp.w,
+        y: parseFloat(pad.style.top) / this.vp.h,
+      };
+      this.save.persist();
+      this.actions.applySettings();
+    };
+    pad.addEventListener('pointerup', release);
+    pad.addEventListener('pointercancel', release);
+
+    return pad;
   }
 
   showGraphicsSettings(): void {
