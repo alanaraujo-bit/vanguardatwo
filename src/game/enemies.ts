@@ -5,6 +5,7 @@ import {
   drawSprite, glowDot, shapeSprite,
   ARCHIVIST_POINTS, DART_POINTS, GLYPH_POINTS, MINE_POINTS, NEEDLE_POINTS, QUEEN_POINTS, STINGER_POINTS,
   SHARD_POINTS, FLAKE_POINTS, GEYSER_POINTS, GLACIER_POINTS, ZERO_POINTS,
+  FUME_POINTS, MIASMA_POINTS,
   type ShapePoints, type Sprite,
 } from '../fx/sprites';
 import { BAL } from './balance';
@@ -15,11 +16,12 @@ export type EnemyKind =
   | 'drone' | 'dart' | 'splitter' | 'mini' | 'wasp' | 'tank' | 'boss'
   | 'larva' | 'spore' | 'stinger' | 'weaver' | 'beetle' | 'queen'
   | 'glyph' | 'needle' | 'pylon' | 'mine' | 'monolith' | 'archivist'
-  | 'crystal' | 'shard' | 'flake' | 'geyser' | 'glacier' | 'zero';
+  | 'crystal' | 'shard' | 'flake' | 'geyser' | 'glacier' | 'zero'
+  | 'blight' | 'vile' | 'ooze' | 'mite' | 'fume' | 'crawler' | 'miasma';
 
 /** Boss-class units: fill the boss HP bar, gate wave progression, drop boss loot. */
 export function isBossKind(kind: EnemyKind): boolean {
-  return kind === 'boss' || kind === 'queen' || kind === 'archivist' || kind === 'zero';
+  return kind === 'boss' || kind === 'queen' || kind === 'archivist' || kind === 'zero' || kind === 'miasma';
 }
 
 export interface Spec {
@@ -61,6 +63,14 @@ export const SPECS: Record<EnemyKind, Spec> = {
   geyser:   { hp: 38,  speed: 18,  dmg: 12, radius: 16, xp: 3, score: 40,  color: '#6dd5ff' },
   glacier:  { hp: 140, speed: 26,  dmg: 22, radius: 24, xp: 5, score: 65,  color: '#4fc3f7' },
   zero:     { hp: 760, speed: 50,  dmg: 30, radius: 50, xp: 36, score: 1000, color: '#b3e5fc' },
+  // — Setor 5: Zona Tóxica —
+  blight:   { hp: 15,  speed: 108, dmg: 6,  radius: 9,  xp: 1, score: 14,  color: '#9eff4d' },
+  vile:     { hp: 24,  speed: 45,  dmg: 9,  radius: 12, xp: 2, score: 22,  color: '#d4ff22' },
+  ooze:     { hp: 38,  speed: 38,  dmg: 10, radius: 15, xp: 2, score: 26,  color: '#7dff62' },
+  mite:     { hp: 9,   speed: 100, dmg: 6,  radius: 8,  xp: 1, score: 10,  color: '#7dff62' },
+  fume:     { hp: 26,  speed: 34,  dmg: 7,  radius: 12, xp: 2, score: 30,  color: '#b8ff50' },
+  crawler:  { hp: 135, speed: 24,  dmg: 22, radius: 23, xp: 5, score: 55,  color: '#ff6b35' },
+  miasma:   { hp: 700, speed: 45,  dmg: 28, radius: 48, xp: 34, score: 900, color: '#4dff4d' },
 };
 
 interface ShapeOpts { sides?: number; points?: ShapePoints; rotate?: number; innerDetail?: boolean; }
@@ -92,6 +102,14 @@ export const ENEMY_SHAPE_OPTS: Record<EnemyKind, ShapeOpts> = {
   geyser:   { points: GEYSER_POINTS, innerDetail: true },
   glacier:  { points: GLACIER_POINTS, innerDetail: true },
   zero:     { points: ZERO_POINTS, innerDetail: true },
+  // — Setor 5: Zona Tóxica —
+  blight:   { sides: 5, innerDetail: true },
+  vile:     { sides: 8, innerDetail: true },
+  ooze:     { sides: 7, innerDetail: true },
+  mite:     { sides: 5 },
+  fume:     { points: FUME_POINTS, innerDetail: true },
+  crawler:  { sides: 6, innerDetail: true },
+  miasma:   { points: MIASMA_POINTS, innerDetail: true },
 };
 
 // Colosso phases
@@ -126,6 +144,10 @@ const SH_DASH = 2;
 const Z_CHASE = 0;
 const Z_GEYSER = 1;
 const Z_BEAM = 2;
+
+// Miasma phases: orbit + acid globs, root + gas vent.
+const M_ORBIT = 0;
+const M_VENT = 1;
 
 export class Enemy {
   /** Network identity for snapshot interpolation; inert in solo play. */
@@ -600,6 +622,30 @@ export class Enemies {
       case 'zero':
         this.steerZero(e, dt, world, nx, ny, d);
         break;
+      // — Setor 5: Zona Tóxica —
+      case 'blight':
+        this.steerBlight(e, dt, world, nx, ny);
+        break;
+      case 'vile':
+        this.steerVile(e, dt, world, nx, ny, d);
+        break;
+      case 'ooze':
+        e.vx += (nx * e.speed - e.vx) * damp(1.8, dt);
+        e.vy += (ny * e.speed - e.vy) * damp(1.8, dt);
+        e.rot += dt * 1.2;
+        break;
+      case 'mite':
+        this.steerMite(e, dt, world, nx, ny);
+        break;
+      case 'fume':
+        this.steerFume(e, dt, world, nx, ny, d);
+        break;
+      case 'crawler':
+        this.steerCrawler(e, dt, world, nx, ny);
+        break;
+      case 'miasma':
+        this.steerMiasma(e, dt, world, nx, ny, d);
+        break;
     }
   }
 
@@ -934,12 +980,182 @@ export class Enemies {
     }
   }
 
+  // ——— Setor 5: Zona Tóxica ———
+
+  private steerBlight(e: Enemy, dt: number, world: World, nx: number, ny: number): void {
+    // Erratic skitter: fast zigzag with sharp direction changes.
+    const weaveAmp = 60 + Math.sin(e.t * 1.7 + e.seed) * 30;
+    const weaveFreq = 6 + Math.sin(e.seed) * 2;
+    const weave = Math.sin(e.t * weaveFreq + e.seed * 2) * weaveAmp;
+    // Random jolts to feel insect-like.
+    const joltX = Math.sin(e.t * 11 + e.seed * 3) > 0.85 ? Math.cos(e.seed) * 120 : 0;
+    const joltY = Math.sin(e.t * 13 + e.seed * 5) > 0.85 ? Math.sin(e.seed) * 120 : 0;
+    e.vx += ((nx * e.speed + joltX - ny * weave) - e.vx) * damp(7, dt);
+    e.vy += ((ny * e.speed + joltY + nx * weave) - e.vy) * damp(7, dt);
+    e.rot = Math.atan2(e.vy, e.vx);
+  }
+
+  private steerVile(e: Enemy, dt: number, world: World, nx: number, ny: number, d: number): void {
+    // Slow, keeps distance. Fires acid orbs that create pools on landing.
+    let tx = 0;
+    let ty = 0;
+    if (d > 260) {
+      tx = nx * e.speed;
+      ty = ny * e.speed;
+    } else if (d < 180) {
+      tx = -nx * e.speed;
+      ty = -ny * e.speed;
+    }
+    e.vx += (tx - e.vx) * damp(2.2, dt);
+    e.vy += (ty - e.vy) * damp(2.2, dt);
+    e.rot += dt * 0.6;
+    e.fireT -= dt;
+    if (e.fireT <= 0 && d < 350) {
+      e.fireT = rand(2.5, 3.3);
+      const aim = Math.atan2(ny, nx);
+      // Acid orb — slower, visible arc, leaves a patch when it expires.
+      world.enemyShots.spawnAcid(e.x, e.y, aim + rand(-0.12, 0.12), 130, e.dmg * 0.7, 2.5);
+      world.audio.play('drip');
+    }
+  }
+
+  private steerMite(e: Enemy, dt: number, world: World, nx: number, ny: number): void {
+    // Fast mini ooze — similar to mini but with wobble.
+    const wob = Math.sin(e.t * 4 + e.seed) * 30;
+    e.vx += ((nx * e.speed - ny * wob) - e.vx) * damp(6, dt);
+    e.vy += ((ny * e.speed + nx * wob) - e.vy) * damp(6, dt);
+    e.rot += dt * 2.8;
+  }
+
+  private steerFume(e: Enemy, dt: number, world: World, nx: number, ny: number, d: number): void {
+    // Slow drift with bobbing. Doesn't chase aggressively.
+    // Periodically emits a gas pulse ring that damages nearby players.
+    const bob = Math.sin(e.t * 1.8 + e.seed) * 16;
+    let tx = -ny * Math.sin(e.seed) * e.speed * 0.4;
+    let ty = nx * Math.sin(e.seed) * e.speed * 0.4;
+    if (d > 350) {
+      tx += nx * e.speed * 0.5;
+      ty += ny * e.speed * 0.5;
+    } else if (d < 150) {
+      tx -= nx * e.speed * 0.5;
+      ty -= ny * e.speed * 0.5;
+    }
+    e.vx += ((tx + -ny * bob) - e.vx) * damp(1.6, dt);
+    e.vy += ((ty + nx * bob) - e.vy) * damp(1.6, dt);
+    e.rot += dt * 0.7;
+
+    // Passive toxic aura: damages any player within 60px.
+    for (const p of world.players) {
+      if (p.dead) continue;
+      const pd = len(p.x - e.x, p.y - e.y);
+      if (pd < 60) {
+        p.takeDamage(e.dmg * 0.15 * dt, world);
+      }
+    }
+
+    // Pulse attack: ring of gas.
+    e.fireT -= dt;
+    if (e.fireT <= 0) {
+      e.fireT = rand(3, 4.5);
+      // Damage all players within radius.
+      for (const p of world.players) {
+        if (p.dead) continue;
+        const pd = len(p.x - e.x, p.y - e.y);
+        if (pd < 180) {
+          p.takeDamage(e.dmg * 0.7, world);
+        }
+      }
+      world.particles.ring(e.x, e.y, SPECS.fume.color, 14, 180, 0.5, 4);
+      world.audio.play('hiss');
+    }
+  }
+
+  private steerCrawler(e: Enemy, dt: number, world: World, nx: number, ny: number): void {
+    // Very slow heavy. Leaves acid trail behind.
+    e.vx += (nx * e.speed - e.vx) * damp(1.6, dt);
+    e.vy += (ny * e.speed - e.vy) * damp(1.6, dt);
+    e.rot -= dt * 0.3;
+    e.fireT -= dt;
+    // Leave acid trail every ~1.5s of movement.
+    const moving = len(e.vx, e.vy) > 5;
+    if (e.fireT <= 0 && moving) {
+      e.fireT = rand(1.2, 1.8);
+      world.enemyShots.spawnPatch(e.x + rand(-5, 5), e.y + rand(-5, 5), e.dmg * 0.3, 3);
+    }
+  }
+
+  private steerMiasma(e: Enemy, dt: number, world: World, nx: number, ny: number, d: number): void {
+    e.rot += dt * 0.25;
+    e.phaseT += dt;
+    const enrage = e.hp < e.maxHp * 0.35 ? 0.6 : 1;
+
+    switch (e.phase) {
+      // — Phase 1: Saturation — orbit + fire acid globs —
+      case M_ORBIT: {
+        const side = Math.sin(e.seed) >= 0 ? 1 : -1;
+        let tx = -ny * side * e.speed * 0.85;
+        let ty = nx * side * e.speed * 0.85;
+        if (d > 300) {
+          tx += nx * e.speed;
+          ty += ny * e.speed;
+        } else if (d < 200) {
+          tx -= nx * e.speed;
+          ty -= ny * e.speed;
+        }
+        e.vx += (tx - e.vx) * damp(2.2, dt);
+        e.vy += (ty - e.vy) * damp(2.2, dt);
+        e.fireT -= dt;
+        if (e.fireT <= 0) {
+          e.fireT = rand(0.8, 1.2) * enrage;
+          const aim = Math.atan2(ny, nx);
+          const count = enrage < 1 ? 6 : 4;
+          for (let i = 0; i < count; i++) {
+            const spread = (i - (count - 1) / 2) * 0.15;
+            world.enemyShots.spawnAcid(e.x + Math.cos(aim) * e.radius, e.y + Math.sin(aim) * e.radius, aim + spread + rand(-0.05, 0.05), 140, e.dmg * 0.38, 2);
+          }
+          world.audio.play('drip');
+        }
+        if (e.phaseT > 3.5 * enrage) {
+          e.phase = M_VENT;
+          e.phaseT = 0;
+          e.volleys = 0;
+        }
+        break;
+      }
+      // — Phase 2: Vácuo Tóxico — root + vent gas in rotating cones —
+      case M_VENT: {
+        e.vx *= 1 - Math.min(1, 5 * dt);
+        e.vy *= 1 - Math.min(1, 5 * dt);
+        e.flash = 0.05;
+        if (e.phaseT > 0.5 * enrage && e.volleys < 4) {
+          e.phaseT = 0;
+          e.volleys++;
+          const coneAngle = enrage < 1 ? Math.PI : Math.PI * 0.67; // 180° enraged, 120° normal
+          const coneDir = e.seed + e.volleys * 1.57; // rotate ~90° each pulse
+          const count = 6;
+          for (let i = 0; i < count; i++) {
+            const a = coneDir - coneAngle / 2 + (i / (count - 1)) * coneAngle;
+            world.enemyShots.spawnAcid(e.x + Math.cos(a) * e.radius, e.y + Math.sin(a) * e.radius, a, 150, e.dmg * 0.32, 1.8);
+          }
+          world.particles.ring(e.x, e.y, SPECS.miasma.color, 16, 220, 0.55, 5);
+          world.audio.play('hiss');
+        }
+        if (e.volleys >= 4 && e.phaseT > 0.8 * enrage) {
+          e.phase = M_ORBIT;
+          e.phaseT = 0;
+          e.fireT = 0;
+        }
+        break;
+      }
+    }
+  }
+
   damage(e: Enemy, amount: number, crit: boolean, kx: number, ky: number, world: World, killer: Player | null = null): void {
     if (e.dead) return;
     e.hp -= amount;
     e.flash = 0.09;
     // Heavy units and bosses resist knockback.
-    const resist = e.kind === 'tank' || e.kind === 'beetle' || e.kind === 'monolith' ? 0.35 : isBossKind(e.kind) ? 0.08 : 1;
+    const resist = e.kind === 'tank' || e.kind === 'beetle' || e.kind === 'monolith' || e.kind === 'crawler' ? 0.35 : isBossKind(e.kind) ? 0.08 : 1;
     e.kvx += kx * resist;
     e.kvy += ky * resist;
     world.floaters.spawn(e.x, e.y - e.radius - 4, String(Math.round(amount)), {
@@ -1064,7 +1280,7 @@ export class Enemies {
     if (big) world.shake(8);
 
     // Loot
-    const heavy = e.kind === 'tank' || e.kind === 'beetle' || e.kind === 'monolith' || e.kind === 'glacier';
+    const heavy = e.kind === 'tank' || e.kind === 'beetle' || e.kind === 'monolith' || e.kind === 'glacier' || e.kind === 'crawler';
     world.pickups.spawnGems(e.x, e.y, e.xp);
     if (isBossKind(e.kind)) {
       world.pickups.spawnCoins(e.x, e.y, randInt(BAL.drops.bossCoins[0], BAL.drops.bossCoins[1]));
@@ -1091,6 +1307,35 @@ export class Enemies {
         world.enemyShots.spawn(e.x, e.y, a, 185, e.dmg * 0.68);
       }
       world.audio.play('mine');
+    }
+
+    if (e.kind === 'blight') {
+      // Leaves a small acid pool on death.
+      world.enemyShots.spawnPatch(e.x, e.y, e.dmg * 0.4, 2.5);
+      world.audio.play('drip');
+    }
+
+    if (e.kind === 'mite') {
+      // Leaves a small acid pool on death.
+      world.enemyShots.spawnPatch(e.x, e.y, e.dmg * 0.35, 2);
+    }
+
+    if (e.kind === 'vile') {
+      // Erupts into 3 acid pools in a fan.
+      for (let i = -1; i <= 1; i++) {
+        const a = Math.atan2(e.vy, e.vx) + i * 0.4;
+        world.enemyShots.spawnPatch(e.x + Math.cos(a) * 12, e.y + Math.sin(a) * 12, e.dmg * 0.45, 3.5);
+      }
+      world.particles.ring(e.x, e.y, SPECS.vile.color, 8, 60, 0.5, 3);
+      world.audio.play('hiss');
+    }
+
+    if (e.kind === 'ooze') {
+      // Divides into 2 Mites (mini oozes).
+      this.pendingSpawn.push(
+        { kind: 'mite', x: e.x - 10, y: e.y, hpMul: e.maxHp / SPECS.ooze.hp, dmgMul: e.dmg / SPECS.ooze.dmg },
+        { kind: 'mite', x: e.x + 10, y: e.y, hpMul: e.maxHp / SPECS.ooze.hp, dmgMul: e.dmg / SPECS.ooze.dmg },
+      );
     }
 
     if (e.kind === 'splitter') {

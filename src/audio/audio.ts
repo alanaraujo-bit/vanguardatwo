@@ -5,7 +5,8 @@ export type SfxName =
   | 'spit' | 'lunge' | 'burst' | 'summon' | 'sector'
   | 'zap' | 'mine' | 'lattice'
   | 'arrow'
-  | 'crack' | 'freeze' | 'shatter' | 'howl';
+  | 'crack' | 'freeze' | 'shatter' | 'howl'
+  | 'drip' | 'hiss' | 'toxin';
 
 interface ToneOptions {
   f0: number;
@@ -325,6 +326,24 @@ export class AudioEngine {
         this.tone({ f0: 130, f1: 200, type: 'sawtooth', dur: 0.45, vol: 0.08 });
         this.tone({ f0: 160, f1: 240, type: 'triangle', dur: 0.45, vol: 0.05, when: this.ctx.currentTime + 0.08 });
         this.noiseHit({ dur: 0.4, vol: 0.06, from: 400, to: 3000, filter: 'bandpass', q: 1.2 });
+        break;
+      // ——— Setor 5: Zona Tóxica ———
+      case 'drip':
+        // Gota de ácido — som líquido e corrosivo.
+        this.tone({ f0: 900 * p, f1: 180, type: 'triangle', dur: 0.08, vol: 0.06 });
+        this.noiseHit({ dur: 0.06, vol: 0.04, from: 3000, to: 600, filter: 'bandpass', q: 2 });
+        break;
+      case 'hiss':
+        // Gás vazando — chiado curto e áspero.
+        this.noiseHit({ dur: 0.25, vol: 0.08, from: 5500, to: 1200, filter: 'bandpass', q: 1.4 });
+        this.tone({ f0: 200, f1: 80, type: 'sawtooth', dur: 0.2, vol: 0.04 });
+        break;
+      case 'toxin':
+        // Pulso tóxico — grave vibrante com aspereza.
+        this.tone({ f0: 120, f1: 55, type: 'sawtooth', dur: 0.3, vol: 0.12 });
+        this.tone({ f0: 240, f1: 110, type: 'square', dur: 0.25, vol: 0.06, when: this.ctx.currentTime + 0.04 });
+        this.noiseHit({ dur: 0.22, vol: 0.07, from: 2000, to: 300, filter: 'bandpass', q: 1.6 });
+        this.vibrate(40);
         break;
     }
   }

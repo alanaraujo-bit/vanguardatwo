@@ -173,7 +173,7 @@ export class PlayerShots {
   }
 }
 
-export type OrbVisual = 'default' | 'ice' | 'patch';
+export type OrbVisual = 'default' | 'ice' | 'patch' | 'acid';
 
 export interface Orb {
   /** Network identity for snapshot interpolation; inert in solo play. */
@@ -195,6 +195,7 @@ export class EnemyShots {
   private orb: Sprite | null = null;
   private iceOrb: Sprite | null = null;
   private patchOrb: Sprite | null = null;
+  private acidOrb: Sprite | null = null;
 
   spawn(x: number, y: number, angle: number, speed: number, dmg: number): void {
     const o = this.pool.obtain();
@@ -225,7 +226,25 @@ export class EnemyShots {
     this.active.push(o);
   }
 
-  /** Spawn a stationary ice patch hazard. */
+  /** Spawn an acid orb that leaves a patch when it expires. */
+  spawnAcid(x: number, y: number, angle: number, speed: number, dmg: number, life = 2.5): void {
+    const o = this.pool.obtain();
+    o.id = this.nextId++;
+    o.x = x;
+    o.y = y;
+    o.vx = Math.cos(angle) * speed;
+    o.vy = Math.sin(angle) * speed;
+    o.dmg = dmg;
+    o.life = life;
+    o.visual = 'acid';
+    o.freeze = 0;
+    this.active.push(o);
+  }
+
+  /** Number of acid pools planted by acid orbs this frame (capped per frame). */
+  private acidPoolsThisFrame = 0;
+
+  /** Spawn a stationary hazard (acid pool / ice patch). */
   spawnPatch(x: number, y: number, dmg: number, life = 3): void {
     const o = this.pool.obtain();
     o.id = this.nextId++;
@@ -241,10 +260,15 @@ export class EnemyShots {
   }
 
   update(dt: number, world: World): void {
+    this.acidPoolsThisFrame = 0;
     for (let i = this.active.length - 1; i >= 0; i--) {
       const o = this.active[i];
       o.life -= dt;
       if (o.life <= 0) {
+        if (o.visual === 'acid' && this.acidPoolsThisFrame < 6) {
+          this.acidPoolsThisFrame++;
+          world.enemyShots.spawnPatch(o.x, o.y, o.dmg * 0.6, 4);
+        }
         this.pool.free(swapRemove(this.active, i));
         continue;
       }
@@ -256,7 +280,7 @@ export class EnemyShots {
         if (dist2(o.x, o.y, p.x, p.y) < r * r) {
           p.takeDamage(o.dmg, world);
           if (o.freeze > 0) p.slow(o.freeze);
-          const hitSpr = o.visual === 'patch' ? this.patchOrb : o.visual === 'ice' ? this.iceOrb : this.orb;
+          const hitSpr = o.visual === 'patch' ? this.patchOrb : o.visual === 'ice' ? this.iceOrb : o.visual === 'acid' ? this.acidOrb : this.orb;
           if (hitSpr) {
             world.particles.burst(hitSpr, o.x, o.y, { count: 5, speed: 110, life: 0.25 });
           }
@@ -275,10 +299,14 @@ export class EnemyShots {
     if (!this.orb) this.orb = glowDot(7, '#ff4ecd');
     if (!this.iceOrb) this.iceOrb = glowDot(8, '#8af0ff');
     if (!this.patchOrb) this.patchOrb = glowDot(14, 'rgba(160, 230, 255, 0.6)');
+    if (!this.acidOrb) this.acidOrb = glowDot(9, '#9eff4d');
     for (const o of this.active) {
       if (!isVisible(o.x, o.y, camX, camY, vpW, vpH)) continue;
       const pulse = 1 + Math.sin(time * 12 + o.x) * 0.15;
-      const spr = o.visual === 'patch' ? this.patchOrb! : o.visual === 'ice' ? this.iceOrb! : this.orb!;
+      const spr = o.visual === 'patch' ? this.patchOrb!
+        : o.visual === 'ice' ? this.iceOrb!
+        : o.visual === 'acid' ? this.acidOrb!
+        : this.orb!;
       const alpha = o.visual === 'patch' ? 0.5 + Math.sin(time * 3 + o.id) * 0.15 : 1;
       drawSprite(ctx, spr, o.x, o.y, 0, pulse, alpha);
     }

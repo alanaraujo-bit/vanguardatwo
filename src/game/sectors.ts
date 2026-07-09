@@ -207,7 +207,58 @@ export const GELIDA: SectorDef = {
   },
 };
 
-export const SECTORS: readonly SectorDef[] = [RUINA, COLMEIA, ARQUIVO, GELIDA];
+export const TOXICA: SectorDef = {
+  id: 'toxica',
+  name: 'ZONA TÓXICA',
+  subtitle: 'A ferida aberta da Ruína',
+  accent: '#9eff4d',
+  composition: [
+    { kind: 'blight', weight: 9, from: 1, decay: 0.18, floor: 4 },
+    { kind: 'vile', weight: 5.5, from: 1 },
+    { kind: 'ooze', weight: 4.5, from: 2 },
+    { kind: 'fume', weight: 4, from: 3 },
+    { kind: 'crawler', weight: 3, from: 5 },
+  ],
+  boss: {
+    kind: 'miasma',
+    name: 'Miasma',
+    warnSub: 'O VENENO TOMOU CONTA DE TUDO',
+    defeatTitle: 'MIASMA NEUTRALIZADO',
+    defeatSub: 'O ar começa a limpar... por enquanto',
+  },
+  background: {
+    gradient: ['#0a1106', '#0e0d05', '#0c0804'],
+    nebulas: ['rgba(80, 200, 40, 0.4)', 'rgba(200, 180, 20, 0.35)', 'rgba(100, 255, 80, 0.3)'],
+    star: '#b8ff84',
+    grid: 'rgba(120, 200, 50, 0.1)',
+    gridStyle: 'square',
+  },
+  // G Phrygian: acidic, dissonant, with a harsh sawtooth lead.
+  music: {
+    bpm: 124,
+    bass: [49, 51.91, 55, 51.91],
+    chords: [
+      [196, 233.08, 277.18],
+      [207.65, 261.63, 293.66],
+      [233.08, 277.18, 349.23],
+      [220, 261.63, 311.13],
+    ],
+    lead: 'sawtooth',
+    bossMusic: {
+      bpm: 136,
+      bass: [49, 49, 55, 51.91],
+      chords: [
+        [196, 233.08, 277.18, 349.23],
+        [207.65, 261.63, 293.66, 370],
+        [233.08, 277.18, 349.23, 415.3],
+        [220, 261.63, 311.13, 392],
+      ],
+      lead: 'square',
+    },
+  },
+};
+
+export const SECTORS: readonly SectorDef[] = [RUINA, COLMEIA, ARQUIVO, GELIDA, TOXICA];
 
 /** 0-based campaign position — keeps counting up when sectors cycle. */
 export function sectorIndexForWave(wave: number): number {

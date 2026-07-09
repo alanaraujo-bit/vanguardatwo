@@ -239,3 +239,18 @@ export const ZERO_POINTS: ShapePoints = [
   [0, 1.1], [-0.24, 0.7], [-0.5, 0.92], [-0.44, 0.44], [-0.92, 0.5], [-0.7, 0.18],
   [-1.06, 0], [-0.7, -0.18], [-0.92, -0.5], [-0.44, -0.44], [-0.5, -0.92], [-0.24, -0.7],
 ];
+
+// ——— Setor 5: Zona Tóxica ———
+
+/** Fume gas bag: asymmetrical balloon-like shape, wider at the top. */
+export const FUME_POINTS: ShapePoints = [
+  [0, -1.05], [0.65, -0.7], [0.95, -0.2], [0.85, 0.35], [0.5, 0.72], [0, 0.92],
+  [-0.45, 0.78], [-0.78, 0.45], [-0.95, -0.1], [-0.75, -0.55], [-0.3, -0.85],
+];
+
+/** Miasma boss: organic reactor core - 10-point irregular star with uneven arms. */
+export const MIASMA_POINTS: ShapePoints = Array.from({ length: 10 }, (_, i) => {
+  const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+  const r = i % 2 === 0 ? 1.05 : 0.5 + (i * 0.07);
+  return [Math.cos(a) * r, Math.sin(a) * r] as const;
+});

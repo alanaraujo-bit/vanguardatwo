@@ -241,6 +241,49 @@ const ENEMY_LORE: Record<EnemyKind, EnemyLore> = {
     lore: 'No centro da Estação Gélida, onde nem as estrelas chegam, o Zero Absoluto espera. Não é uma criatura: é a própria temperatura zero corporificada — um olho de furacão de gelo que alterna entre rajadas de orbes congelantes, geiseres que brotam do chão e um feixe contínuo que varre o campo.',
     tactic: 'Três fases, três respostas: na órbita, desvie dos orbes em zigue-zague; nos geiseres, fique atento ao brilho no chão e não pare em lugar nenhum; no feixe, mova-se lateralmente para escapar da varredura. Abaixo de 35% de vida, ele entra em fúria e começa a invocar Estilhaços durante a fase de órbita.',
   },
+  // — Setor 5: Zona Tóxica —
+  blight: {
+    name: 'Blight',
+    tagline: 'Inseto ácido que avança em zigue-zague e deixa poça ao morrer.',
+    lore: 'Um inseto corrompido pelo rejeito químico da Ruína, criado em massa nos tanques de fermentação da Zona. Avança em linha irregular, mudando de direção como se estivesse fora de controle — porque está.',
+    tactic: 'Individualmente frágil, mas mata-lo de perto enche o chão de poças de ácido. Prefira abate-lo à distância ou em movimento para não ficar cercado por hazards.',
+  },
+  vile: {
+    name: 'Vile',
+    tagline: 'Torre viva que cospe orbes de ácido em arco.',
+    lore: 'Uma criatura inchada e bulbosa que fermenta toxina em seu interior. Não se aproxima: mantém distância e dispara glóbulos que corroem o chão onde caem.',
+    tactic: 'O orbe de ácido descreve um arco visível — desvie enquanto ele voa, mas saiba que onde ele cair nasce uma poça. Ao morrer, explode em três poças de ácido em leque.',
+  },
+  ooze: {
+    name: 'Ooze',
+    tagline: 'Gosma que se divide em duas ao ser destruída.',
+    lore: 'Um aglomerado instável de toxina semissólida. Sua membrana se rompe em duas crias menores quando a casca externa é violada.',
+    tactic: 'Como o Fragmentador, mate-o à distância sempre que possível. As duas Mites que nascem são rápidas e deixam poças de ácido ao morrer.',
+  },
+  mite: {
+    name: 'Mite',
+    tagline: 'Cria do Ooze — pequena, rápida e deixa poça ao morrer.',
+    lore: 'Uma gosma filha, instável e volátil, nascida apenas da destruição de um Ooze. Corre em linha reta e vibra até se desfazer.',
+    tactic: 'HP baixíssimo, mas sempre aparece aos pares. Cada uma deixa uma poça de ácido ao morrer — não mate as duas no mesmo lugar.',
+  },
+  fume: {
+    name: 'Fume',
+    tagline: 'Bolsa de gás flutuante que pulsa toxina e queima por contato.',
+    lore: 'Uma membrana distendida cheia de gás nervoso, mantida à deriva por correntes de ar tóxico da Zona. Ela não caça: preenche o espaço e castiga quem se aproxima.',
+    tactic: 'Tem uma aura de dano passivo ao redor — não fique perto dela sem necessidade. A cada poucos segundos, pulsa um anel de gás que atinge uma área grande. O gás não deixa poça, mas o dano em área é traiçoeiro.',
+  },
+  crawler: {
+    name: 'Crawler',
+    tagline: 'Tanque químico que deixa um rastro de ácido por onde passa.',
+    lore: 'Uma carapaça ambulante de metal e carne, apodrecida e reforçada, que expele toxina de cada poro. Anda devagar, mas cada passo envenena o chão que toca.',
+    tactic: 'Lento como os outros pesados, mas seu rastro de ácido torna perigoso ficar atrás dele. Force-o a mudar de direção para que o rastro não bloqueie sua rota de fuga. Pode soltar coração ao morrer.',
+  },
+  miasma: {
+    name: 'Miasma',
+    tagline: 'O reator orgânico da Zona — chefe do setor 5.',
+    lore: 'No centro da Zona Tóxica, onde o veneno é mais denso, o Miasma pulsa. Não é uma entidade que caça: é um núcleo de reator vivo que CORROMPE o espaço ao redor, enchendo a arena de ácido e gás até não sobrar chão seguro.',
+    tactic: 'Duas fases, duas respostas: na saturação, desvie dos glóbulos de ácido e não deixe as poças acumularem; no vácuo tóxico, fique atento aos cones de gás e posicione-se nos vãos entre eles. Abaixo de 35% de vida, tudo acelera e os cones de gás dobram de largura.',
+  },
 };
 
 const ENEMY_ORDER: readonly EnemyKind[] = [
@@ -248,6 +291,7 @@ const ENEMY_ORDER: readonly EnemyKind[] = [
   'larva', 'spore', 'stinger', 'weaver', 'beetle', 'queen',
   'glyph', 'needle', 'pylon', 'mine', 'monolith', 'archivist',
   'crystal', 'shard', 'flake', 'geyser', 'glacier', 'zero',
+  'blight', 'vile', 'ooze', 'mite', 'fume', 'crawler', 'miasma',
 ];
 
 function waveAvailability(kind: EnemyKind): string {
@@ -314,6 +358,26 @@ const enemyEntries: CodexEntry[] = ENEMY_ORDER.map((kind) => {
   if (kind === 'crystal') {
     stats.push({ label: 'Salto repentino', value: 'Avanço de 160px/s a cada ~2s' });
   }
+  if (kind === 'blight') {
+    stats.push({ label: 'Poça de ácido ao morrer', value: `Dano ${Math.round(spec.dmg * 0.4)}, dura 2.5s` });
+  }
+  if (kind === 'vile') {
+    stats.push({ label: 'Orbe ácido (cria poça)', value: `Dano ${Math.round(spec.dmg * 0.7)} + poça de ${Math.round(spec.dmg * 0.6)} por 4s` });
+    stats.push({ label: 'Morte explosiva', value: '3 poças de ácido em leque' });
+  }
+  if (kind === 'ooze') {
+    stats.push({ label: 'Divisão ao morrer', value: '2 Mites (mini oozes)' });
+  }
+  if (kind === 'mite') {
+    stats.push({ label: 'Poça de ácido ao morrer', value: `Dano ${Math.round(spec.dmg * 0.35)}, dura 2s` });
+  }
+  if (kind === 'fume') {
+    stats.push({ label: 'Aura tóxica passiva', value: `Dano de ${Math.round(spec.dmg * 0.15)}/s em raio 60px` });
+    stats.push({ label: 'Pulso de gás', value: `Dano ${Math.round(spec.dmg * 0.7)} em raio 180px` });
+  }
+  if (kind === 'crawler') {
+    stats.push({ label: 'Rastro de ácido', value: 'Poças de dano 0.3x a cada ~1.5s' });
+  }
   if (kind === 'tank' || kind === 'beetle' || kind === 'monolith' || kind === 'glacier') {
     stats.push({ label: 'Chance de soltar coração', value: pct(BAL.drops.heartChanceTank) });
   }
@@ -340,6 +404,13 @@ const enemyEntries: CodexEntry[] = ENEMY_ORDER.map((kind) => {
     stats.push({ label: 'Geiseres plantados por ciclo', value: '4 poças de gelo' });
     stats.push({ label: 'Feixe congelante', value: '5 orbes por rajada' });
     stats.push({ label: 'Invoca em fúria', value: '3 Estilhaços por ciclo' });
+    stats.push({ label: 'Recompensa ao cair', value: `${BAL.drops.bossCoins[0]}-${BAL.drops.bossCoins[1]} moedas + 1 coração` });
+  }
+  if (kind === 'miasma') {
+    stats.push({ label: 'Vida na 1ª aparição (onda 45)', value: String(Math.round((BAL.wave.bossHp(45) / 520) * spec.hp)) });
+    stats.push({ label: 'Dano por glóbulo ácido', value: String(Math.round(spec.dmg * 0.38)) });
+    stats.push({ label: 'Cones de gás por ciclo', value: '4 (120° cada, 180° em fúria)' });
+    stats.push({ label: 'Glóbulos por salva', value: '4 (6 em fúria)' });
     stats.push({ label: 'Recompensa ao cair', value: `${BAL.drops.bossCoins[0]}-${BAL.drops.bossCoins[1]} moedas + 1 coração` });
   }
 
