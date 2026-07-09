@@ -119,6 +119,8 @@ export interface SaveData {
   settings: Settings;
   /** Highest campaign level unlocked (1-based; 1 = only the first level). */
   campaignLevel: number;
+  /** Best stars earned per campaign level ID (0 = unplayed, 1-3 = stars). */
+  campaignStars: Record<string, number>;
 }
 
 const GUEST_KEY = 'vanguarda.save.v1';
@@ -145,6 +147,7 @@ function defaults(): SaveData {
       graphics: detectGraphicsPreset(), controlScheme: 'free',
     },
     campaignLevel: 1,
+    campaignStars: {},
   };
 }
 
@@ -169,6 +172,7 @@ function parse(raw: string): SaveData {
     ...base,
     ...parsed,
     meta: { ...(parsed.meta ?? {}) },
+    campaignStars: (parsed.campaignStars ?? {}),
     settings: { ...base.settings, ...(parsed.settings ?? {}), graphics },
   };
   // v1 → v2: veterans never see the forced onboarding flow.

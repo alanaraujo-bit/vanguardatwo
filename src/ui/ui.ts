@@ -6,13 +6,15 @@ import { CAMPAIGN } from '../game/campaign';
 import { CODEX, CODEX_INTRO, type CodexCategoryId, type CodexEntry } from '../game/codex';
 import { META_DEFS, metaCost, metaLevel } from '../game/meta';
 import { SHIP_SHAPE } from '../game/player';
+import { formatBRL, STORE_PACKS, type StorePackDef } from '../game/store';
 import { paintIcon, type UpgradeDef } from '../game/upgrades';
 import { drawSprite, shapeSprite } from '../fx/sprites';
 import { api, ApiError } from '../net/api';
 import { nameError, sanitizeName, NAME_MAX } from '../net/names';
-import type { BoardKind, LeaderboardEntry, ProfileResponse } from '../net/protocol';
+import type { BoardKind, CheckoutResponse, LeaderboardEntry, ProfileResponse } from '../net/protocol';
 import { normalizeRoomCode, ROOM_CODE_LEN, type EndResult, type RoomPlayer } from '../net/realtime';
 import { session } from '../net/session';
+import { storeSync } from '../net/store-sync';
 
 export interface RunStats {
   wave: number;
@@ -29,6 +31,10 @@ export interface LevelStats {
   time: number;
   coins: number;
   cleared: boolean;
+  stars: number;
+  coinReward: number;
+  hp: number;
+  maxHp: number;
 }
 
 export interface UiActions {
@@ -102,6 +108,9 @@ export class UI {
   private tutBubbleTitle: HTMLElement | null = null;
   private tutBubbleSub: HTMLElement | null = null;
   private tutSkipBtn: HTMLElement | null = null;
+  private checkoutBusy = false;
+  private pixListener: ((status: 'approved' | 'rejected' | 'expired') => void) | null = null;
+  private pixCountdownTimer: number | null = null;
   private codexTab: CodexCategoryId = CODEX[0].id;
   private lbTab: BoardKind = 'wave';
   private current: string | null = null;
@@ -187,10 +196,19 @@ export class UI {
     return canvas;
   }
 
-  private coinChip(value: number): HTMLElement {
+  private coinChip(value: number, onBuy?: () => void): HTMLElement {
     const chip = el('span', 'chip chip-coins');
     chip.appendChild(el('span', 'coin-dot'));
     chip.appendChild(el('span', 'chip-value', String(value)));
+    if (onBuy) {
+      const add = el('button', 'coin-add', '+');
+      add.addEventListener('pointerdown', () => this.audio.play('tap'));
+      add.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onBuy();
+      });
+      chip.appendChild(add);
+    }
     return chip;
   }
 
@@ -242,7 +260,7 @@ export class UI {
     const chips = el('div', 'row chips');
     const best = el('span', 'chip', `${S.bestWave}: ${this.save.data.bestWave || '—'}`);
     chips.appendChild(best);
-    chips.appendChild(this.coinChip(this.save.data.coins));
+    chips.appendChild(this.coinChip(this.save.data.coins, () => this.showStore()));
     s.appendChild(chips);
 
     s.appendChild(el('div', 'spacer'));
@@ -349,6 +367,7 @@ export class UI {
     const list = el('div', 'col cards mode-list');
     CAMPAIGN.forEach((level, i) => {
       const unlocked = i < this.save.data.campaignLevel;
+      const stars = this.save.data.campaignStars[level.id] ?? 0;
       const card = el('button', `card mode-card${unlocked ? '' : ' locked'}`);
       card.style.setProperty('--i', String(i));
       card.style.setProperty('--accent', level.sector.accent);
@@ -360,6 +379,27 @@ export class UI {
       const body = el('div', 'grow');
       body.appendChild(el('div', 'item-name', `${i + 1}. ${level.name}`));
       body.appendChild(el('div', 'item-desc', unlocked ? level.subtitle : S.campaignLocked));
+
+      // Estrelas conquistadas + recompensa + condições
+      if (unlocked) {
+        const meta = el('div', 'campaign-meta');
+        // Estrelas
+        const starRow = el('span', 'campaign-stars');
+        for (let s = 0; s < 3; s++) {
+          const dot = el('span', `star-dot${s < stars ? ' filled' : ''}`);
+          starRow.appendChild(dot);
+        }
+        meta.appendChild(starRow);
+        // Condições de estrela (tooltip-like, mostrado abaixo)
+        const condEl = el('div', 'campaign-star-conds');
+        condEl.appendChild(el('span', 'star-cond', `★★☆ ${level.stars.cond2}`));
+        condEl.appendChild(el('span', 'star-cond', `★★★ ${level.stars.cond3}`));
+        meta.appendChild(condEl);
+        // Recompensa total da fase
+        const totalReward = 3 * 5; // 3 estrelas × 5 moedas
+        meta.appendChild(this.coinChip(totalReward));
+        body.appendChild(meta);
+      }
       card.appendChild(body);
 
       card.appendChild(el('span', 'mode-chevron', unlocked ? '›' : '🔒'));
@@ -389,7 +429,7 @@ export class UI {
     const header = el('div', 'row header');
     header.appendChild(this.btn(`‹ ${S.back}`, 'ghost small', () => this.showMenu()));
     header.appendChild(el('div', 'grow'));
-    header.appendChild(this.coinChip(this.save.data.coins));
+    header.appendChild(this.coinChip(this.save.data.coins, () => this.showStore()));
     s.appendChild(header);
 
     s.appendChild(el('h2', 'heading', S.shopTitle));
@@ -434,6 +474,178 @@ export class UI {
     }
     s.appendChild(list);
     this.open('shop');
+  }
+
+  // ————— coin store (real-money packs) —————
+
+  showStore(): void {
+    this.hideAll();
+    const s = this.screen('store');
+
+    if (!session.authed) {
+      const header = el('div', 'row header');
+      header.appendChild(this.btn(`‹ ${S.back}`, 'ghost small', () => this.showMenu()));
+      s.appendChild(header);
+      s.appendChild(el('h2', 'heading', S.storeTitle));
+      s.appendChild(el('div', 'subheading', S.storeSub));
+      s.appendChild(el('div', 'spacer'));
+      s.appendChild(this.btn(S.storeGuestCta, 'primary', () => {
+        this.showLogin({ onDone: () => this.showStore() });
+      }));
+      s.appendChild(el('div', 'spacer'));
+      this.open('store');
+      return;
+    }
+
+    const header = el('div', 'row header');
+    header.appendChild(this.btn(`‹ ${S.back}`, 'ghost small', () => this.showMenu()));
+    header.appendChild(el('div', 'grow'));
+    header.appendChild(this.coinChip(this.save.data.coins));
+    s.appendChild(header);
+
+    s.appendChild(el('h2', 'heading', S.storeTitle));
+    s.appendChild(el('div', 'subheading', S.storeSub));
+
+    const list = el('div', 'scroll list');
+    STORE_PACKS.forEach((pack, i) => {
+      const row = el('div', 'panel shop-row store-row');
+      row.style.setProperty('--i', String(i));
+
+      const icon = el('div', 'icon-wrap');
+      icon.appendChild(paintIcon('coin', '#ffc857', 38));
+      row.appendChild(icon);
+
+      const body = el('div', 'grow');
+      body.appendChild(el('div', 'item-name', pack.name));
+      const total = pack.coins + pack.bonusCoins;
+      const desc = pack.bonusCoins > 0
+        ? `${total} moedas (+${pack.bonusCoins} ${S.storeBonusSuffix})`
+        : `${total} moedas`;
+      body.appendChild(el('div', 'item-desc', desc));
+      if (pack.badge) {
+        const label = pack.badge === 'popular' ? S.storeBadgePopular : S.storeBadgeBest;
+        body.appendChild(el('span', `store-badge ${pack.badge}`, label));
+      }
+      row.appendChild(body);
+
+      row.appendChild(this.btn(formatBRL(pack.priceCents), 'buy small', () => void this.startCheckout(pack)));
+      list.appendChild(row);
+    });
+    s.appendChild(list);
+    this.open('store');
+  }
+
+  private async startCheckout(pack: StorePackDef): Promise<void> {
+    if (this.checkoutBusy) return;
+    this.checkoutBusy = true;
+    this.audio.play('confirm');
+    try {
+      const res = await api.checkout(pack.id);
+      storeSync.track(res.purchaseId);
+      this.showPixPay(pack, res);
+    } catch {
+      this.audio.play('deny');
+      this.showPixError();
+    } finally {
+      this.checkoutBusy = false;
+    }
+  }
+
+  private showPixPay(pack: StorePackDef, checkout: CheckoutResponse): void {
+    const s = this.screen('pixpay');
+    const panel = el('div', 'panel dialog pix-panel');
+
+    panel.appendChild(el('h2', 'heading', S.storePixTitle));
+    panel.appendChild(el('div', 'subheading', S.storePixSub));
+
+    const qrWrap = el('div', 'pix-qr-wrap');
+    const qr = document.createElement('img');
+    qr.className = 'pix-qr';
+    qr.src = `data:image/png;base64,${checkout.qrCodeBase64}`;
+    qr.alt = 'QR Code Pix';
+    qrWrap.appendChild(qr);
+    panel.appendChild(qrWrap);
+
+    const copyBtn = this.btn(S.storeCopyCode, 'ghost small', () => {
+      void navigator.clipboard?.writeText(checkout.copyPaste).then(() => {
+        copyBtn.textContent = S.storeCopied;
+        window.setTimeout(() => {
+          copyBtn.textContent = S.storeCopyCode;
+        }, 1600);
+      });
+    });
+    panel.appendChild(copyBtn);
+
+    const status = el('div', 'pix-status', S.storeWaiting);
+    panel.appendChild(status);
+    const countdown = el('div', 'pix-countdown');
+    panel.appendChild(countdown);
+    panel.appendChild(this.btn(S.storeClose, 'ghost small', () => this.closePixPay()));
+
+    s.innerHTML = '';
+    s.appendChild(panel);
+    this.open('pixpay');
+
+    const expiresAt = Date.parse(checkout.expiresAt);
+    const tickCountdown = (): void => {
+      const remain = Math.max(0, Math.round((expiresAt - Date.now()) / 1000));
+      countdown.textContent = `${S.storeExpiresIn} ${fmtTime(remain)}`;
+    };
+    tickCountdown();
+    this.pixCountdownTimer = window.setInterval(tickCountdown, 1000);
+
+    if (this.pixListener) storeSync.offResolve(this.pixListener);
+    this.pixListener = (result) => {
+      if (this.pixCountdownTimer !== null) {
+        clearInterval(this.pixCountdownTimer);
+        this.pixCountdownTimer = null;
+      }
+      if (result === 'approved') {
+        this.audio.play('buy');
+        panel.innerHTML = '';
+        panel.appendChild(el('h2', 'heading glow', S.storeApprovedTitle));
+        window.setTimeout(() => {
+          this.closePixPay();
+          this.showStore();
+        }, 1400);
+        return;
+      }
+      this.audio.play('deny');
+      panel.innerHTML = '';
+      panel.appendChild(el('h2', 'heading', result === 'expired' ? S.storeExpiredTitle : S.storeRejectedTitle));
+      panel.appendChild(el('div', 'subheading', result === 'expired' ? S.storeExpiredSub : S.storeRejectedSub));
+      const row = el('div', 'row gap');
+      row.appendChild(this.btn(S.storeTryAgain, 'primary small grow', () => {
+        this.closePixPay();
+        void this.startCheckout(pack);
+      }));
+      row.appendChild(this.btn(S.storeClose, 'ghost small grow', () => this.closePixPay()));
+      panel.appendChild(row);
+    };
+    storeSync.onResolve(this.pixListener);
+  }
+
+  private showPixError(): void {
+    const s = this.screen('pixpay');
+    const panel = el('div', 'panel dialog pix-panel');
+    panel.appendChild(el('h2', 'heading', S.storeErrorTitle));
+    panel.appendChild(el('div', 'subheading', S.storeErrorSub));
+    panel.appendChild(this.btn(S.storeClose, 'ghost small', () => this.closePixPay()));
+    s.innerHTML = '';
+    s.appendChild(panel);
+    this.open('pixpay');
+  }
+
+  private closePixPay(): void {
+    if (this.pixCountdownTimer !== null) {
+      clearInterval(this.pixCountdownTimer);
+      this.pixCountdownTimer = null;
+    }
+    if (this.pixListener) {
+      storeSync.offResolve(this.pixListener);
+      this.pixListener = null;
+    }
+    this.close('pixpay');
   }
 
   // ————— codex (in-game encyclopedia) —————
@@ -1149,6 +1361,15 @@ export class UI {
     s.appendChild(el('h2', 'heading gameover-title', stats.cleared ? S.levelClearTitle : S.levelFailedTitle));
     s.appendChild(el('div', 'subheading', level.name));
 
+    // Estrelas conquistadas
+    if (stats.cleared) {
+      const starRow = el('div', 'campaign-stars result-stars');
+      for (let i = 0; i < 3; i++) {
+        starRow.appendChild(el('span', `star-dot big${i < stats.stars ? ' filled' : ''}`));
+      }
+      s.appendChild(starRow);
+    }
+
     const panel = el('div', 'panel results');
     const addRow = (label: string, value: string): HTMLElement => {
       const row = el('div', 'row result-row');
@@ -1160,15 +1381,25 @@ export class UI {
     };
     addRow(S.kills, String(stats.kills));
     addRow(S.timeSurvived, fmtTime(stats.time));
+    if (stats.cleared && stats.maxHp > 0) {
+      addRow('HP restante', `${Math.round((stats.hp / stats.maxHp) * 100)}%`);
+    }
 
     const coinsRow = el('div', 'row result-row coins-row');
-    coinsRow.appendChild(el('span', 'grow item-desc', S.coinsEarned));
+    coinsRow.appendChild(el('span', 'grow item-desc', stats.cleared ? S.coinsEarned : S.coinsEarned));
     coinsRow.appendChild(el('span', 'coin-dot'));
     const coinsEl = el('span', 'result-value amber', '0');
     coinsRow.appendChild(coinsEl);
     panel.appendChild(coinsRow);
     this.countUp(coinsEl, stats.coins, 1.2, '+');
     s.appendChild(panel);
+
+    // Recompensa em moedas das estrelas
+    if (stats.cleared && stats.coinReward > 0) {
+      const rewardEl = el('div', 'coin-reward-banner', `${S.starReward} +${stats.coinReward}`);
+      rewardEl.prepend(el('span', 'coin-dot'));
+      s.appendChild(rewardEl);
+    }
 
     const col = el('div', 'col actions');
     const hasNext = stats.cleared && stats.levelIndex + 1 < CAMPAIGN.length;

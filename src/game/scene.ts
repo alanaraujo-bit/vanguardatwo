@@ -16,7 +16,7 @@ import { Player } from './player';
 import { EnemyShots, PlayerShots } from './projectiles';
 import { S } from '../i18n/strings';
 import type { RunSubmission } from '../net/protocol';
-import type { LevelDef } from './campaign';
+import { calcStars, COINS_PER_STAR, type LevelDef } from './campaign';
 import { LevelDirector } from './level-director';
 import { SECTORS, sectorForWave, sectorIndexForWave, sectorNumberForWave } from './sectors';
 import { TutorialDirector, type TutorialHooks } from './tutorial';
@@ -546,13 +546,25 @@ export class GameScene implements Scene, World {
   }
 
   private finalizeCampaign(): void {
-    const { index } = this.deps.campaign!;
+    const { index, level } = this.deps.campaign!;
     const cleared = this.waves.cleared === true;
     const save = this.deps.save;
+
+    let coinReward = 0;
+    let stars = 0;
 
     if (cleared) {
       save.data.coins += this.coinsRun;
       save.data.campaignLevel = Math.max(save.data.campaignLevel, index + 2);
+
+      // Calcula estrelas e recompensa em moedas.
+      stars = calcStars(level, true, this.player.hp, this.player.stats.maxHp, this.runTime);
+      const prevStars = save.data.campaignStars[level.id] ?? 0;
+      if (stars > prevStars) {
+        coinReward = (stars - prevStars) * COINS_PER_STAR;
+        save.data.coins += coinReward;
+        save.data.campaignStars[level.id] = stars;
+      }
       save.persist();
     }
 
@@ -563,6 +575,10 @@ export class GameScene implements Scene, World {
       time: this.runTime,
       coins: this.coinsRun,
       cleared,
+      stars,
+      coinReward,
+      hp: this.player.hp,
+      maxHp: this.player.stats.maxHp,
     };
     this.deps.ui.showLevelComplete(stats);
   }

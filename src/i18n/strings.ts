@@ -231,4 +231,7 @@ export const S = {
   storeErrorTitle: 'LOJA INDISPONÍVEL',
   storeErrorSub: 'Não foi possível iniciar o pagamento. Tente novamente em instantes.',
   storeClose: 'FECHAR',
+
+  // ————— campanha (estrelas) —————
+  starReward: 'Bônus por estrelas',
 } as const;

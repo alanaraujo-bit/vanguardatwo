@@ -22,6 +22,7 @@ export interface CloudSave {
   tutorialDone: boolean;
   settings: Settings | null;
   campaignLevel: number;
+  campaignStars: Record<string, number>;
 }
 
 export interface PlayerInfo {
@@ -233,6 +234,9 @@ export function clampCloudSave(raw: Partial<CloudSave> | null | undefined): Clou
     tutorialDone: r.tutorialDone === true,
     settings,
     campaignLevel: Math.max(1, int(r.campaignLevel, SAVE_LIMITS.campaignLevel)),
+    campaignStars: (r.campaignStars && typeof r.campaignStars === 'object')
+      ? { ...(r.campaignStars as Record<string, number>) }
+      : {},
   };
 }
 
@@ -261,6 +265,7 @@ export function mergeCloudSaves(a: CloudSave, b: CloudSave, coinsFrom: 'max' | '
     tutorialDone: a.tutorialDone || b.tutorialDone,
     settings: a.settings ?? b.settings,
     campaignLevel: Math.max(a.campaignLevel, b.campaignLevel),
+    campaignStars: { ...b.campaignStars, ...a.campaignStars },
   };
 }
 
@@ -280,6 +285,7 @@ export function cloudFromSave(d: SaveData): CloudSave {
     tutorialDone: d.tutorialDone,
     settings: d.settings,
     campaignLevel: d.campaignLevel,
+    campaignStars: { ...d.campaignStars },
   });
 }
 
@@ -301,4 +307,5 @@ export function applyCloudToSave(d: SaveData, c: CloudSave): void {
   // out a value the player already has locally.
   if (c.settings) d.settings = { ...d.settings, ...c.settings, graphics: c.settings.graphics ?? d.settings.graphics };
   d.campaignLevel = c.campaignLevel;
+  d.campaignStars = { ...c.campaignStars, ...d.campaignStars };
 }

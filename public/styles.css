@@ -99,13 +99,13 @@ html, body {
   pointer-events: auto;
 }
 
-.s-pause, .s-levelup, .s-gameover, .s-confirm {
+.s-pause, .s-levelup, .s-gameover, .s-confirm, .s-pixpay {
   justify-content: center;
   background: rgba(4, 6, 15, 0.74);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
 }
-.s-confirm { z-index: 5; }
+.s-confirm, .s-pixpay { z-index: 5; }
 
 /* ————— layout helpers ————— */
 
@@ -316,6 +316,28 @@ html, body {
   flex-shrink: 0;
 }
 
+.coin-add {
+  width: 20px;
+  height: 20px;
+  margin: -2px -4px -2px 2px;
+  border-radius: 50%;
+  border: none;
+  background: var(--amber);
+  color: #201400;
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: 0 0 8px rgba(255, 200, 87, 0.5);
+  transition: transform 0.1s ease;
+}
+.coin-add:active { transform: scale(0.88); }
+
 /* ————— panels & lists ————— */
 
 .panel {
@@ -403,6 +425,55 @@ html, body {
 }
 
 .stats-line { margin-top: 20px; }
+
+/* ————— coin store ————— */
+
+.store-row .btn.buy { min-width: 84px; padding: 0 10px; }
+.store-badge {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+.store-badge.popular {
+  color: var(--cyan);
+  background: rgba(53, 240, 255, 0.12);
+  border: 1px solid var(--cyan-dim);
+}
+.store-badge.best {
+  color: var(--amber);
+  background: rgba(255, 200, 87, 0.12);
+  border: 1px solid rgba(255, 200, 87, 0.45);
+}
+
+.pix-panel { max-width: 340px; padding: 24px; text-align: center; }
+.pix-panel .btn { margin-top: 14px; }
+.pix-panel .row { margin: 14px auto 0; }
+.pix-qr-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 6px 0 14px;
+  padding: 14px;
+  border-radius: 16px;
+  background: #fff;
+}
+.pix-qr { width: 190px; height: 190px; display: block; object-fit: contain; }
+.pix-status {
+  margin-top: 16px;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--dim);
+}
+.pix-countdown {
+  margin-top: 4px;
+  font-size: 12px;
+  text-align: center;
+  color: var(--dim);
+}
 
 /* ————— codex ————— */
 
@@ -1038,6 +1109,70 @@ html, body {
 .profile-grid { margin: 0; }
 .profile-actions { max-width: none; margin-top: 4px; }
 .profile-actions .danger { margin-top: 0; }
+
+/* ————— campaign (stars, meta, rewards) ————— */
+
+.campaign-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.campaign-star-conds {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 10px;
+  color: var(--dim);
+  line-height: 1.3;
+}
+.star-cond {
+  white-space: nowrap;
+}
+.campaign-stars {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.star-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(143, 163, 200, 0.25);
+  border: 1px solid rgba(143, 163, 200, 0.3);
+  flex-shrink: 0;
+  transition: background 0.25s, border-color 0.25s, box-shadow 0.25s;
+}
+.star-dot.filled {
+  background: var(--amber);
+  border-color: var(--amber);
+  box-shadow: 0 0 6px rgba(255, 200, 87, 0.6);
+}
+.star-dot.big {
+  width: 18px;
+  height: 18px;
+}
+.result-stars {
+  justify-content: center;
+  margin-bottom: 10px;
+}
+.coin-reward-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 8px 0 4px;
+  padding: 8px 18px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #201400;
+  background: linear-gradient(180deg, #ffe9b0, var(--amber));
+  box-shadow: 0 0 18px rgba(255, 200, 87, 0.4);
+  animation: badgePop 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) 0.3s both;
+}
 
 /* ————— guided tutorial ————— */
 
