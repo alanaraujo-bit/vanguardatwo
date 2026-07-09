@@ -538,7 +538,7 @@ export class GameScene implements Scene, World {
       ctx.globalAlpha = 1;
     }
 
-    this.renderJoystick(ctx);
+    this.input.renderStick(ctx, gfx.glow, this.state === 'playing');
 
     const hv = this.hudView;
     hv.hp = this.player.hp;
@@ -557,27 +557,6 @@ export class GameScene implements Scene, World {
       ? { hp: boss.hp, maxHp: boss.maxHp, name: (this.waves.bossInfo?.() ?? sectorForWave(this.waves.wave).boss).name }
       : null;
     this.hud.render(ctx, hv, vp, time, gfx.glow);
-  }
-
-  private renderJoystick(ctx: CanvasRenderingContext2D): void {
-    const input = this.input;
-    if (!input.stickActive || this.state !== 'playing') return;
-    ctx.globalAlpha = 0.2;
-    ctx.strokeStyle = '#7df3ff';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(input.stickOX, input.stickOY, 44, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.globalAlpha = 0.35;
-    ctx.fillStyle = '#7df3ff';
-    ctx.beginPath();
-    ctx.arc(
-      input.stickOX + input.moveX * 34,
-      input.stickOY + input.moveY * 34,
-      13, 0, Math.PI * 2,
-    );
-    ctx.fill();
-    ctx.globalAlpha = 1;
   }
 }
 

@@ -20,6 +20,15 @@ const vp = new Viewport(canvas);
 const input = new Input(canvas);
 const game = new Game(canvas, vp, input);
 
+/** Bottom clearance for the fixed-pad anchor, clear of the boss bar (drawn ~63px above safe-bottom). */
+const STICK_ANCHOR_MARGIN = 126;
+function syncStickAnchor(): void {
+  input.anchorX = vp.w / 2;
+  input.anchorY = vp.h - vp.safeBottom - STICK_ANCHOR_MARGIN;
+}
+vp.onResize(syncStickAnchor);
+syncStickAnchor();
+
 const save = new SaveSystem();
 save.load();
 session.init(save);

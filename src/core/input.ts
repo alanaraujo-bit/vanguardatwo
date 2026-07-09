@@ -3,6 +3,14 @@ import { clamp, len } from './utils';
 
 const STICK_RADIUS = 46;
 const DEAD_ZONE = 5;
+/** 'bottomHalf' pad: how far a touch may land from the anchor and still grab the stick. Generous, so thumbs don't need to look. */
+const FIXED_HIT_RADIUS = 72;
+const FIXED_RING_RADIUS = 50;
+const FIXED_KNOB_TRAVEL = 36;
+const FIXED_KNOB_RADIUS = 16;
+const FLOAT_RING_RADIUS = 44;
+const FLOAT_KNOB_TRAVEL = 34;
+const FLOAT_KNOB_RADIUS = 13;
 
 /** True while the event targets a text field (name entry, login forms). */
 export function isTyping(e: Event): boolean {
@@ -34,17 +42,32 @@ export class Input {
   /** Which zone of the screen accepts the initial touch. Settings-driven. */
   scheme: ControlScheme = 'free';
 
+  /**
+   * Anchor for the 'bottomHalf' pad — always bottom-center, kept in sync with
+   * the viewport by main.ts on every resize. Unused in 'free' scheme.
+   */
+  anchorX = 0;
+  anchorY = 0;
+
   private pointerId: number | null = null;
   private readonly keys = new Set<string>();
 
   constructor(canvas: HTMLCanvasElement) {
     canvas.addEventListener('pointerdown', (e) => {
       if (this.pointerId !== null) return;
-      if (this.scheme === 'bottomHalf' && e.clientY < window.innerHeight / 2) return;
+      if (this.scheme === 'bottomHalf') {
+        // Fixed pad: the origin never moves, only touches that land near it grab the stick.
+        if (len(e.clientX - this.anchorX, e.clientY - this.anchorY) > FIXED_HIT_RADIUS) return;
+        this.stickOX = this.anchorX;
+        this.stickOY = this.anchorY;
+      } else {
+        this.stickOX = e.clientX;
+        this.stickOY = e.clientY;
+      }
       this.pointerId = e.pointerId;
       this.stickActive = true;
-      this.stickOX = this.stickX = e.clientX;
-      this.stickOY = this.stickY = e.clientY;
+      this.stickX = e.clientX;
+      this.stickY = e.clientY;
       canvas.setPointerCapture(e.pointerId);
     });
 
@@ -52,6 +75,7 @@ export class Input {
       if (e.pointerId !== this.pointerId) return;
       this.stickX = e.clientX;
       this.stickY = e.clientY;
+      if (this.scheme === 'bottomHalf') return; // origin stays pinned to the anchor
       const dx = this.stickX - this.stickOX;
       const dy = this.stickY - this.stickOY;
       const d = len(dx, dy);
@@ -123,5 +147,62 @@ export class Input {
       mx: Math.round(this.moveX * 100) / 100,
       my: Math.round(this.moveY * 100) / 100,
     };
+  }
+
+  /**
+   * Draws the on-screen stick, shared by solo and co-op scenes.
+   * 'free': only while a touch is active, following the finger.
+   * 'bottomHalf': a small pad stays anchored bottom-center at all times, so
+   * players build muscle memory for exactly where to rest their thumb.
+   */
+  renderStick(ctx: CanvasRenderingContext2D, glow: boolean, visible: boolean): void {
+    if (!visible) return;
+    if (this.scheme === 'bottomHalf') this.renderFixedPad(ctx, glow);
+    else if (this.stickActive) this.renderFloatingStick(ctx);
+  }
+
+  private renderFloatingStick(ctx: CanvasRenderingContext2D): void {
+    ctx.globalAlpha = 0.2;
+    ctx.strokeStyle = '#7df3ff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(this.stickOX, this.stickOY, FLOAT_RING_RADIUS, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = '#7df3ff';
+    ctx.beginPath();
+    ctx.arc(this.stickOX + this.moveX * FLOAT_KNOB_TRAVEL, this.stickOY + this.moveY * FLOAT_KNOB_TRAVEL, FLOAT_KNOB_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  /** Always-on pad: faint pill when idle, brightens and glows once a thumb grabs it. */
+  private renderFixedPad(ctx: CanvasRenderingContext2D, glow: boolean): void {
+    const { anchorX: ox, anchorY: oy, stickActive: active } = this;
+
+    ctx.globalAlpha = active ? 0.14 : 0.08;
+    ctx.fillStyle = '#7df3ff';
+    ctx.beginPath();
+    ctx.arc(ox, oy, FIXED_RING_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalAlpha = active ? 0.5 : 0.26;
+    ctx.strokeStyle = '#7df3ff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(ox, oy, FIXED_RING_RADIUS, 0, Math.PI * 2);
+    ctx.stroke();
+
+    if (glow && active) {
+      ctx.shadowColor = '#7df3ff';
+      ctx.shadowBlur = 16;
+    }
+    ctx.globalAlpha = active ? 0.85 : 0.4;
+    ctx.fillStyle = '#7df3ff';
+    ctx.beginPath();
+    ctx.arc(ox + this.moveX * FIXED_KNOB_TRAVEL, oy + this.moveY * FIXED_KNOB_TRAVEL, FIXED_KNOB_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
   }
 }

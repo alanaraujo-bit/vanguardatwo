@@ -496,7 +496,7 @@ export class CoopScene implements Scene {
     }
 
     this.renderPartnerArrow(ctx, w, h);
-    this.renderJoystick(ctx);
+    this.deps.game.input.renderStick(ctx, gfx.glow, true);
 
     if (snap) {
       const me = snap.players.find((p) => p.slot === this.deps.localSlot);
@@ -573,26 +573,6 @@ export class CoopScene implements Scene {
     ctx.globalAlpha = 1;
   }
 
-  private renderJoystick(ctx: CanvasRenderingContext2D): void {
-    const input = this.deps.game.input;
-    if (!input.stickActive) return;
-    ctx.globalAlpha = 0.2;
-    ctx.strokeStyle = '#7df3ff';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(input.stickOX, input.stickOY, 44, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.globalAlpha = 0.35;
-    ctx.fillStyle = '#7df3ff';
-    ctx.beginPath();
-    ctx.arc(
-      input.stickOX + input.moveX * 34,
-      input.stickOY + input.moveY * 34,
-      13, 0, Math.PI * 2,
-    );
-    ctx.fill();
-    ctx.globalAlpha = 1;
-  }
 }
 
 export type { PlayerSnap };
