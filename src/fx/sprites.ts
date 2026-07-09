@@ -275,3 +275,32 @@ export const TITAN_POINTS: ShapePoints = Array.from({ length: 14 }, (_, i) => {
   const r = i % 2 === 0 ? 1.05 : 0.55 + (i * 0.025);
   return [Math.cos(a) * r, Math.sin(a) * r] as const;
 });
+
+// ——— Setor 7: Bosque Fóssil ———
+
+/** Amber crystal: faceted golden gem with pointed bottom. */
+export const AMBER_POINTS: ShapePoints = [
+  [0, -1.05], [0.75, -0.55], [0.85, 0.15], [0.5, 0.65], [0.2, 1.0],
+  [-0.2, 1.0], [-0.5, 0.65], [-0.85, 0.15], [-0.75, -0.55],
+];
+
+/** Root tendril: twisted, jagged organic root shape. */
+export const ROOT_POINTS: ShapePoints = [
+  [0.25, -1.1], [0.75, -0.6], [0.15, -0.35], [0.65, 0.05], [-0.1, 0.3],
+  [0.5, 0.7], [-0.15, 0.85], [-0.4, 0.5], [-0.1, 0.2], [-0.6, -0.1],
+  [-0.15, -0.4], [-0.55, -0.8],
+];
+
+/** Canopy fossil: wide mushroom/umbrella shape — broad top, narrow stem. */
+export const CANOPY_POINTS: ShapePoints = [
+  [0, -1.05], [0.55, -0.9], [1.05, -0.4], [0.95, 0.1], [0.4, 0.35],
+  [0.3, 1.05], [-0.3, 1.05], [-0.4, 0.35], [-0.95, 0.1], [-1.05, -0.4],
+  [-0.55, -0.9],
+];
+
+/** Ancient boss: 16-point irregular fossil crown — jagged bone protrusions. */
+export const ANCIENT_POINTS: ShapePoints = Array.from({ length: 16 }, (_, i) => {
+  const a = (i / 16) * Math.PI * 2 - Math.PI / 2;
+  const r = i % 2 === 0 ? 1.05 : 0.35 + Math.sin(i * 2.7) * 0.35;
+  return [Math.cos(a) * r, Math.sin(a) * r] as const;
+});

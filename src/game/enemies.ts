@@ -7,6 +7,7 @@ import {
   SHARD_POINTS, FLAKE_POINTS, GEYSER_POINTS, GLACIER_POINTS, ZERO_POINTS,
   FUME_POINTS, MIASMA_POINTS,
   CINDER_POINTS, BELLOWS_POINTS, TITAN_POINTS,
+  AMBER_POINTS, ROOT_POINTS, CANOPY_POINTS, ANCIENT_POINTS,
   type ShapePoints, type Sprite,
 } from '../fx/sprites';
 import { BAL } from './balance';
@@ -19,11 +20,12 @@ export type EnemyKind =
   | 'glyph' | 'needle' | 'pylon' | 'mine' | 'monolith' | 'archivist'
   | 'crystal' | 'shard' | 'flake' | 'geyser' | 'glacier' | 'zero'
   | 'blight' | 'vile' | 'ooze' | 'mite' | 'fume' | 'crawler' | 'miasma'
-  | 'spark' | 'cinder' | 'cog' | 'bellows' | 'crusher' | 'titan';
+  | 'spark' | 'cinder' | 'cog' | 'bellows' | 'crusher' | 'titan'
+  | 'pollen' | 'amber' | 'root' | 'petra' | 'canopy' | 'ancient';
 
 /** Boss-class units: fill the boss HP bar, gate wave progression, drop boss loot. */
 export function isBossKind(kind: EnemyKind): boolean {
-  return kind === 'boss' || kind === 'queen' || kind === 'archivist' || kind === 'zero' || kind === 'miasma' || kind === 'titan';
+  return kind === 'boss' || kind === 'queen' || kind === 'archivist' || kind === 'zero' || kind === 'miasma' || kind === 'titan' || kind === 'ancient';
 }
 
 export interface Spec {
@@ -80,6 +82,13 @@ export const SPECS: Record<EnemyKind, Spec> = {
   bellows:  { hp: 30,  speed: 30,  dmg: 7,  radius: 14, xp: 2, score: 32,  color: '#ff6b00' },
   crusher:  { hp: 145, speed: 22,  dmg: 24, radius: 24, xp: 5, score: 60,  color: '#5a4a3a' },
   titan:    { hp: 820, speed: 44,  dmg: 30, radius: 50, xp: 38, score: 1100, color: '#ff4500' },
+  // — Setor 7: Bosque Fóssil —
+  pollen:   { hp: 12,  speed: 90,  dmg: 5,  radius: 8,  xp: 1, score: 12,  color: '#d4a843' },
+  amber:    { hp: 24,  speed: 42,  dmg: 8,  radius: 11, xp: 2, score: 24,  color: '#f0c050' },
+  root:     { hp: 30,  speed: 72,  dmg: 10, radius: 12, xp: 2, score: 30,  color: '#8b7355' },
+  petra:    { hp: 140, speed: 22,  dmg: 24, radius: 24, xp: 5, score: 60,  color: '#a08060' },
+  canopy:   { hp: 28,  speed: 30,  dmg: 7,  radius: 14, xp: 2, score: 32,  color: '#c4a040' },
+  ancient:  { hp: 800, speed: 40,  dmg: 32, radius: 52, xp: 38, score: 1100, color: '#b8963c' },
 };
 
 interface ShapeOpts { sides?: number; points?: ShapePoints; rotate?: number; innerDetail?: boolean; }
@@ -126,6 +135,13 @@ export const ENEMY_SHAPE_OPTS: Record<EnemyKind, ShapeOpts> = {
   bellows:  { points: BELLOWS_POINTS, innerDetail: true },
   crusher:  { sides: 6, innerDetail: true },
   titan:    { points: TITAN_POINTS, innerDetail: true },
+  // — Setor 7: Bosque Fóssil —
+  pollen:   { sides: 5, innerDetail: true },
+  amber:    { points: AMBER_POINTS, innerDetail: true },
+  root:     { points: ROOT_POINTS, innerDetail: true },
+  petra:    { sides: 7, rotate: Math.PI / 7, innerDetail: true },
+  canopy:   { points: CANOPY_POINTS, innerDetail: true },
+  ancient:  { points: ANCIENT_POINTS, innerDetail: true },
 };
 
 // Colosso phases
@@ -173,6 +189,16 @@ const CG_ROLL = 1;
 const T_ORBIT = 0;
 const T_SLAM = 1;
 const T_FORGE = 2;
+
+// Ancient phases: fossil pursuit, amber eruption, enraged fury
+const A_PURSUE = 0;
+const A_ERUPT = 1;
+
+// Root phases: submerged movement vs surfaced attack
+const RT_HIDDEN = 0;
+const RT_SURFACE = 1;
+
+
 
 export class Enemy {
   /** Network identity for snapshot interpolation; inert in solo play. */
@@ -687,6 +713,25 @@ export class Enemies {
       case 'titan':
         this.steerTitan(e, dt, world, nx, ny, d);
         break;
+      // — Setor 7: Bosque Fóssil —
+      case 'pollen':
+        this.steerPollen(e, dt, world, nx, ny);
+        break;
+      case 'amber':
+        this.steerAmber(e, dt, world, nx, ny, d);
+        break;
+      case 'root':
+        this.steerRoot(e, dt, world, nx, ny, d);
+        break;
+      case 'petra':
+        this.steerPetra(e, dt, world, nx, ny, d);
+        break;
+      case 'canopy':
+        this.steerCanopy(e, dt, world, nx, ny, d);
+        break;
+      case 'ancient':
+        this.steerAncient(e, dt, world, nx, ny, d);
+        break;
     }
   }
 
@@ -1125,6 +1170,216 @@ export class Enemies {
     }
   }
 
+  // ——— Setor 7: Bosque Fóssil ———
+
+  private steerPollen(e: Enemy, dt: number, world: World, nx: number, ny: number): void {
+    // Erratic floating seed — bobs and drifts with cross-wind oscillation.
+    const weave = Math.sin(e.t * 4.2 + e.seed * 3) * 40;
+    const bob = Math.sin(e.t * 2.6 + e.seed * 5) * 20;
+    e.vx += ((nx * e.speed - ny * weave + Math.cos(e.seed) * bob) - e.vx) * damp(5, dt);
+    e.vy += ((ny * e.speed + nx * weave + Math.sin(e.seed) * bob) - e.vy) * damp(5, dt);
+    e.rot += dt * (2 + Math.sin(e.seed) * 0.8);
+  }
+
+  private steerAmber(e: Enemy, dt: number, world: World, nx: number, ny: number, d: number): void {
+    // Slow hover at mid-range, fires amber resin droplets.
+    let tx = 0;
+    let ty = 0;
+    if (d > 260) {
+      tx = nx * e.speed;
+      ty = ny * e.speed;
+    } else if (d < 180) {
+      tx = -nx * e.speed;
+      ty = -ny * e.speed;
+    }
+    const wob = Math.sin(e.t * 2 + e.seed) * 12;
+    e.vx += ((tx + -ny * wob) - e.vx) * damp(2.2, dt);
+    e.vy += ((ty + nx * wob) - e.vy) * damp(2.2, dt);
+    e.rot += dt * 0.7;
+    e.fireT -= dt;
+    if (e.fireT <= 0 && d < 350) {
+      e.fireT = rand(2.5, 3.3);
+      const aim = Math.atan2(ny, nx);
+      // Amber resin shot — slow arcing projectile that leaves a pool.
+      world.enemyShots.spawnAcid(e.x, e.y, aim + rand(-0.12, 0.12), 130, e.dmg * 0.7, 2.5);
+      world.audio.play('drip');
+    }
+  }
+
+  private steerRoot(e: Enemy, dt: number, world: World, nx: number, ny: number, d: number): void {
+    // Submerged drifter: surfaces near the player, fires a burst, submerges again.
+    switch (e.phase) {
+      case RT_HIDDEN:
+        // Move faster while submerged, toward player.
+        e.vx += (nx * e.speed * 0.85 - e.vx) * damp(3, dt);
+        e.vy += (ny * e.speed * 0.85 - e.vy) * damp(3, dt);
+        e.rot += dt * 1.4;
+        e.fireT -= dt;
+        if (e.fireT <= 0 && d < 280) {
+          // Surface briefly for attack.
+          e.phase = RT_SURFACE;
+          e.phaseT = 0;
+          e.flash = 0.08;
+        }
+        break;
+      case RT_SURFACE:
+        // Stop and attack.
+        e.vx *= 1 - Math.min(1, 8 * dt);
+        e.vy *= 1 - Math.min(1, 8 * dt);
+        e.flash = 0.05;
+        if (e.phaseT > 0.35) {
+          // Fire a spread of fossilized bone splinters.
+          const aim = Math.atan2(ny, nx);
+          for (let i = -1; i <= 1; i++) {
+            world.enemyShots.spawn(e.x, e.y, aim + i * 0.3, 190, e.dmg * 0.6);
+          }
+          world.audio.play('crack');
+          e.phase = RT_HIDDEN;
+          e.phaseT = 0;
+          e.fireT = rand(2, 3.5);
+        }
+        break;
+    }
+    e.phaseT += dt;
+  }
+
+  private steerPetra(e: Enemy, dt: number, world: World, nx: number, ny: number, d: number): void {
+    // Very slow fossilized heavy. Petrifying gaze: periodic slowing cone.
+    e.vx += (nx * e.speed - e.vx) * damp(1.4, dt);
+    e.vy += (ny * e.speed - e.vy) * damp(1.4, dt);
+    e.rot -= dt * 0.25;
+    e.fireT -= dt;
+    if (e.fireT <= 0 && d < 300) {
+      e.fireT = rand(3, 4.5);
+      const aim = Math.atan2(ny, nx);
+      // Petrifying cone: 5 ice (slowing) projectiles in a fan.
+      for (let i = -2; i <= 2; i++) {
+        world.enemyShots.spawnIce(e.x, e.y, aim + i * 0.15, 150, e.dmg * 0.35, 0.6);
+      }
+      world.particles.ring(e.x, e.y, SPECS.petra.color, 12, 260, 0.4, 4);
+      world.audio.play('howl');
+    }
+  }
+
+  private steerCanopy(e: Enemy, dt: number, world: World, nx: number, ny: number, d: number): void {
+    // Slow drift positioning over the player. Periodically drops amber stalactites.
+    let tx = 0;
+    let ty = 0;
+    if (d > 300) {
+      tx = nx * e.speed;
+      ty = ny * e.speed;
+    } else if (d < 180) {
+      tx = -nx * e.speed;
+      ty = -ny * e.speed;
+    }
+    const osc = Math.sin(e.t * 1.4 + e.seed) * 18;
+    e.vx += ((tx + -ny * osc) - e.vx) * damp(1.8, dt);
+    e.vy += ((ty + nx * osc) - e.vy) * damp(1.8, dt);
+    e.rot += dt * 0.4;
+    e.fireT -= dt;
+    if (e.fireT <= 0) {
+      e.fireT = rand(2, 3.5);
+      // Drop amber stalactites from above the player.
+      const count = 3;
+      for (let i = 0; i < count; i++) {
+        const a = Math.PI / 2 + rand(-0.3, 0.3); // downward angle
+        const dist = rand(-40, 40);
+        world.enemyShots.spawn(e.x + dist, e.y - 30, a, 200, e.dmg * 0.55);
+      }
+      world.audio.play('crack');
+    }
+  }
+
+  private steerAncient(e: Enemy, dt: number, world: World, nx: number, ny: number, d: number): void {
+    e.rot += dt * 0.3;
+    e.phaseT += dt;
+    const enrage = e.hp < e.maxHp * 0.35 ? 0.6 : 1;
+
+    switch (e.phase) {
+      // — Phase 1: Pursuit — orbit + fire bone splinters in fan —
+      case A_PURSUE: {
+        const side = Math.sin(e.seed) >= 0 ? 1 : -1;
+        let tx = -ny * side * e.speed * 0.9;
+        let ty = nx * side * e.speed * 0.9;
+        if (d > 300) {
+          tx += nx * e.speed;
+          ty += ny * e.speed;
+        } else if (d < 200) {
+          tx -= nx * e.speed;
+          ty -= ny * e.speed;
+        }
+        e.vx += (tx - e.vx) * damp(2.2, dt);
+        e.vy += (ty - e.vy) * damp(2.2, dt);
+        e.fireT -= dt;
+        if (e.fireT <= 0) {
+          e.fireT = rand(0.7, 1.1) * enrage;
+          const aim = Math.atan2(ny, nx);
+          const count = enrage < 1 ? 5 : 3;
+          for (let i = 0; i < count; i++) {
+            const spread = (i - (count - 1) / 2) * 0.14;
+            world.enemyShots.spawn(e.x + Math.cos(aim) * e.radius, e.y + Math.sin(aim) * e.radius, aim + spread + rand(-0.05, 0.05), 160, e.dmg * 0.4);
+          }
+          world.audio.play('lattice');
+        }
+        // Enrage: also summon pollen periodically.
+        if (enrage < 1) {
+          e.bladeCd -= dt;
+          if (e.bladeCd <= 0) {
+            e.bladeCd = 4;
+            const hpMul = e.maxHp / SPECS.ancient.hp;
+            const dmgMul = e.dmg / SPECS.ancient.dmg;
+            for (let i = 0; i < 3; i++) {
+              const a = rand(0, TAU);
+              this.pendingSpawn.push({ kind: 'pollen', x: e.x + Math.cos(a) * e.radius, y: e.y + Math.sin(a) * e.radius, hpMul, dmgMul });
+            }
+            world.particles.ring(e.x, e.y, SPECS.ancient.color, 12, 300, 0.4, 4);
+          }
+        }
+        if (e.phaseT > 3.5 * enrage) {
+          e.phase = A_ERUPT;
+          e.phaseT = 0;
+          e.volleys = 0;
+        }
+        break;
+      }
+      // — Phase 2: Amber Eruption — root burst + amber rain —
+      case A_ERUPT: {
+        e.vx *= 1 - Math.min(1, 4 * dt);
+        e.vy *= 1 - Math.min(1, 4 * dt);
+        e.flash = 0.05;
+        if (e.phaseT > 0.5 * enrage && e.volleys < 4) {
+          e.phaseT = 0;
+          e.volleys++;
+          // Burst of amber resin pools in a ring around the boss.
+          const count = enrage < 1 ? 10 : 7;
+          const offset = e.seed + e.volleys * 1.1;
+          for (let i = 0; i < count; i++) {
+            const a = offset + (i / count) * TAU;
+            const dist = 70 + rand(0, 40);
+            world.enemyShots.spawnPatch(
+              e.x + Math.cos(a) * dist,
+              e.y + Math.sin(a) * dist,
+              e.dmg * 0.25, 4,
+            );
+          }
+          // Also fire amber orbs outward.
+          for (let i = 0; i < (enrage < 1 ? 8 : 5); i++) {
+            const a = offset + (i / (enrage < 1 ? 8 : 5)) * TAU + rand(-0.08, 0.08);
+            world.enemyShots.spawnAcid(e.x + Math.cos(a) * e.radius, e.y + Math.sin(a) * e.radius, a, 130, e.dmg * 0.28, 2.5);
+          }
+          world.particles.ring(e.x, e.y, SPECS.ancient.color, 16, 300, 0.55, 5);
+          world.audio.play('slam');
+        }
+        if (e.volleys >= 4 && e.phaseT > 0.8 * enrage) {
+          e.phase = A_PURSUE;
+          e.phaseT = 0;
+          e.fireT = 0.3;
+        }
+        break;
+      }
+    }
+  }
+
   private steerMiasma(e: Enemy, dt: number, world: World, nx: number, ny: number, d: number): void {
     e.rot += dt * 0.25;
     e.phaseT += dt;
@@ -1545,7 +1800,7 @@ export class Enemies {
     if (big) world.shake(8);
 
     // Loot
-    const heavy = e.kind === 'tank' || e.kind === 'beetle' || e.kind === 'monolith' || e.kind === 'glacier' || e.kind === 'crawler' || e.kind === 'crusher';
+    const heavy = e.kind === 'tank' || e.kind === 'beetle' || e.kind === 'monolith' || e.kind === 'glacier' || e.kind === 'crawler' || e.kind === 'crusher' || e.kind === 'petra';
     world.pickups.spawnGems(e.x, e.y, e.xp);
     if (isBossKind(e.kind)) {
       world.pickups.spawnCoins(e.x, e.y, randInt(BAL.drops.bossCoins[0], BAL.drops.bossCoins[1]));
@@ -1618,6 +1873,45 @@ export class Enemies {
         world.enemyShots.spawn(e.x, e.y, a, 170, e.dmg * 0.45);
       }
       world.audio.play('clang');
+    }
+
+    // ——— Setor 7: Bosque Fóssil ———
+
+    if (e.kind === 'pollen') {
+      // Releases a burst of slowing pollen particles.
+      const offset = rand(0, TAU);
+      for (let i = 0; i < 6; i++) {
+        const a = offset + (i / 6) * TAU;
+        world.enemyShots.spawnIce(e.x, e.y, a, 120, e.dmg * 0.3, 0.7);
+      }
+      world.audio.play('hiss');
+    }
+
+    if (e.kind === 'amber') {
+      // Shatters into 3 amber resin pools in a fan.
+      for (let i = -1; i <= 1; i++) {
+        const a = Math.atan2(e.vy, e.vx) + i * 0.4;
+        world.enemyShots.spawnPatch(e.x + Math.cos(a) * 10, e.y + Math.sin(a) * 10, e.dmg * 0.45, 3.5);
+      }
+      world.particles.ring(e.x, e.y, SPECS.amber.color, 8, 60, 0.5, 3);
+      world.audio.play('crack');
+    }
+
+    if (e.kind === 'canopy') {
+      // Collapses, releasing a rain of amber shards.
+      const offset = rand(0, TAU);
+      for (let i = 0; i < 8; i++) {
+        const a = offset + (i / 8) * TAU + rand(-0.15, 0.15);
+        world.enemyShots.spawn(e.x, e.y, a, 160, e.dmg * 0.35);
+      }
+      world.audio.play('shatter');
+    }
+
+    if (e.kind === 'petra') {
+      // Collapses into rubble — a stationary hazard pool.
+      world.enemyShots.spawnPatch(e.x, e.y, e.dmg * 0.3, 4);
+      world.particles.ring(e.x, e.y, SPECS.petra.color, 10, 50, 0.5, 3);
+      world.audio.play('slam');
     }
 
     if (e.kind === 'ooze') {

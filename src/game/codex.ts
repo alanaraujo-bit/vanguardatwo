@@ -284,7 +284,43 @@ const ENEMY_LORE: Record<EnemyKind, EnemyLore> = {
     lore: 'No centro da Zona Tóxica, onde o veneno é mais denso, o Miasma pulsa. Não é uma entidade que caça: é um núcleo de reator vivo que CORROMPE o espaço ao redor, enchendo a arena de ácido e gás até não sobrar chão seguro.',
     tactic: 'Duas fases, duas respostas: na saturação, desvie dos glóbulos de ácido e não deixe as poças acumularem; no vácuo tóxico, fique atento aos cones de gás e posicione-se nos vãos entre eles. Abaixo de 35% de vida, tudo acelera e os cones de gás dobram de largura.',
   },
-  // — Setor 6: A Fundição —
+  // — Setor 7: Bosque Fóssil —
+  pollen: {
+    name: 'Pólen',
+    tagline: 'Esporo flutuante que libera nuvem lentidão ao morrer.',
+    lore: 'Uma cápsula de pólen fossilizado, reanimada por correntes de ar ancestral no Bosque Fóssil. Flutua sem direção certa, mas seu verdadeiro perigo está no que carrega: um pó que paralisa tudo que toca — e que explode quando a cápsula se rompe.',
+    tactic: 'Mata-se fácil, mas nunca de perto: o pó liberado na morte causa lentidão em área. Use a mira automática para abatê-lo à distância enquanto mantém o movimento.',
+  },
+  amber: {
+    name: 'Âmbar',
+    tagline: 'Resina cristalizada que cospe glóbulos pegajosos.',
+    lore: 'Um fragmento de âmbar ancião que conserva em seu interior a assinatura energética de criaturas extintas há eras. Flutua a meia distância, despejando glóbulos de resina que se solidificam no chão em poças douradas.',
+    tactic: 'O glóbulo de resina é mais lento que um projétil comum, mas deixa uma poça pegajosa ao cair por 2,5s — desvie do glóbulo e da poça juntos. Ao morrer, explode em três poças em leque.',
+  },
+  root: {
+    name: 'Raiz',
+    tagline: 'Tendrilo fóssil que emerge do chão para atacar.',
+    lore: 'Uma raiz petrificada que percorre o subsolo do Bosque, guiada pela assinatura de calor da nave. Surge perto do alvo, dispara estilhaços de osso fossilizado em leque, e submerge antes que o piloto possa revidar.',
+    tactic: 'A Raiz é mais rápida enquanto está submersa — quando ela emergir (identificável pelo brilho), mova-se lateralmente para escapar do leque de estilhaços. O momento de ataque dela é também sua janela de contra-ataque.',
+  },
+  petra: {
+    name: 'Petra',
+    tagline: 'Golem fóssil que petrifica com seu olhar.',
+    lore: 'Uma criatura colossal de osso e pedra, arrastada pelas camadas mais profundas do Bosque. Não corre: cada passo é uma era geológica. Mas seu olhar — um cone de energia petrificante — congela os propulsores da nave por tempo suficiente para o enxame cercar o piloto.',
+    tactic: 'Extremamente lento e resistente a recuo. O cone de petrificação tem 5 projéteis lentos em leque — recue quando vir o anel de alerta. Ao morrer, desaba em uma pilha de escombros que bloqueia o chão. Pode soltar coração.',
+  },
+  canopy: {
+    name: 'Cúpula',
+    tagline: 'Fóssil em forma de cogumelo que deixa cair estalactites.',
+    lore: 'Uma formação fóssil em forma de guarda-chuva, suspensa por correntes termais ascendentes. Ela paira sobre o campo e periodicamente deixa cair estalactites de resina endurecida que atravessam o espaço como lanças.',
+    tactic: 'Ela paira sobre você — olhe para cima: o brilho precede a queda das estalactites. Movimento lateral constante atrapalha a pontaria dela. Ao morrer, colapsa e solta 8 fragmentos em círculo.',
+  },
+  ancient: {
+    name: 'O Primeiro',
+    tagline: 'O ser fossilizado mais antigo da Ruína — chefe do setor 7.',
+    lore: 'Antes da Colmeia, antes do Arquivo, antes do gelo e do veneno e do fogo — houve O Primeiro. Uma entidade tão antiga que sua carne virou pedra, seu sangue virou âmbar, e sua memória virou o próprio Bosque Fóssil. Ele não luta como as outras criações da Ruína: ele LEMBRA como se luta, usando técnicas de um tempo em que a Ruína ainda aprendia a destruir.',
+    tactic: 'Duas fases, duas respostas: na perseguição, ele orbita e dispara leques de estilhaços ósseos — desvie entre os vãos do leque; na erupção de âmbar, poças de resina brotam do chão em anéis concêntricos enquanto orbes incandescentes voam para fora — fique nas bordas do padrão. Abaixo de 35% de vida, ele entra em fúria e invoca Pólen durante a perseguição.',
+  },
   spark: {
     name: 'Fagulha',
     tagline: 'Centelha de metal fundido que salta sem direção certa.',
@@ -330,6 +366,7 @@ const ENEMY_ORDER: readonly EnemyKind[] = [
   'crystal', 'shard', 'flake', 'geyser', 'glacier', 'zero',
   'blight', 'vile', 'ooze', 'mite', 'fume', 'crawler', 'miasma',
   'spark', 'cinder', 'cog', 'bellows', 'crusher', 'titan',
+  'pollen', 'amber', 'root', 'petra', 'canopy', 'ancient',
 ];
 
 function waveAvailability(kind: EnemyKind): string {
@@ -434,7 +471,25 @@ const enemyEntries: CodexEntry[] = ENEMY_ORDER.map((kind) => {
   if (kind === 'crusher') {
     stats.push({ label: 'Rastro de metal', value: 'Poças de dano 0.3x a cada ~1.5s' });
   }
-  if (kind === 'tank' || kind === 'beetle' || kind === 'monolith' || kind === 'glacier' || kind === 'crusher') {
+  if (kind === 'petra') {
+    stats.push({ label: 'Cone petrificante', value: '5 projéteis lentidão em leque' });
+    stats.push({ label: 'Escombros ao morrer', value: 'Poça de dano 0.3x por 4s' });
+  }
+  if (kind === 'canopy') {
+    stats.push({ label: 'Estalactites', value: '3 projéteis de cima a cada ~2.5s' });
+    stats.push({ label: 'Fragmentos ao morrer', value: '8 projéteis em círculo' });
+  }
+  if (kind === 'pollen') {
+    stats.push({ label: 'Nuvem de pó ao morrer', value: '6 orbes de lentidão (0.7s cada)' });
+  }
+  if (kind === 'amber') {
+    stats.push({ label: 'Glóbulo de resina (cria poça)', value: `Dano ${Math.round(spec.dmg * 0.7)} + poça de ${Math.round(spec.dmg * 0.6)} por 4s` });
+    stats.push({ label: 'Morte explosiva', value: '3 poças de resina em leque' });
+  }
+  if (kind === 'root') {
+    stats.push({ label: 'Leque de estilhaços', value: '3 projéteis (dano 0.6x cada)' });
+  }
+  if (kind === 'tank' || kind === 'beetle' || kind === 'monolith' || kind === 'glacier' || kind === 'crusher' || kind === 'petra') {
     stats.push({ label: 'Chance de soltar coração', value: pct(BAL.drops.heartChanceTank) });
   }
   if (kind === 'boss') {
@@ -476,6 +531,15 @@ const enemyEntries: CodexEntry[] = ENEMY_ORDER.map((kind) => {
     stats.push({ label: 'Pancadas de choque por ciclo', value: '2 (3 em fúria)' });
     stats.push({ label: 'Orbes na chuva de forja', value: '8 (12 em fúria)' });
     stats.push({ label: 'Invoca em fúria', value: '3 Fagulhas por ciclo' });
+    stats.push({ label: 'Recompensa ao cair', value: `${BAL.drops.bossCoins[0]}-${BAL.drops.bossCoins[1]} moedas + 1 coração` });
+  }
+  if (kind === 'ancient') {
+    stats.push({ label: 'Vida na 1ª aparição (onda 65)', value: String(Math.round((BAL.wave.bossHp(65) / 520) * spec.hp)) });
+    stats.push({ label: 'Dano por estilhaço ósseo', value: String(Math.round(spec.dmg * 0.4)) });
+    stats.push({ label: 'Estilhaços por salva', value: '3 (5 em fúria)' });
+    stats.push({ label: 'Orbes de resina na erupção', value: '5 (8 em fúria)' });
+    stats.push({ label: 'Poças na erupção por ciclo', value: '7 (10 em fúria)' });
+    stats.push({ label: 'Invoca em fúria', value: '3 Pólen por ciclo' });
     stats.push({ label: 'Recompensa ao cair', value: `${BAL.drops.bossCoins[0]}-${BAL.drops.bossCoins[1]} moedas + 1 coração` });
   }
 
@@ -673,7 +737,7 @@ const systemEntries: CodexEntry[] = [
     id: 'sectors',
     name: 'Setores',
     tagline: `A rota do Modo Solo — a cada ${SECTOR_LEN} ondas, um mundo novo.`,
-    lore: 'A cada dez ondas a partida viaja para um novo setor: outro cenário, outra trilha sonora, outros inimigos e um chefe próprio. O Campo da Ruína é só a porta de entrada: na onda 11, a Colmeia acorda; na onda 21, o Arquivo Magnético abre seus trilhos; na onda 31, a Estação Gélida congela o campo; na onda 41, a Zona Tóxica corrompe tudo; na onda 51, a Fundição acende suas forjas.',
+    lore: 'A cada dez ondas a partida viaja para um novo setor: outro cenário, outra trilha sonora, outros inimigos e um chefe próprio. O Campo da Ruína é só a porta de entrada: na onda 11, a Colmeia acorda; na onda 21, o Arquivo Magnético abre seus trilhos; na onda 31, a Estação Gélida congela o campo; na onda 41, a Zona Tóxica corrompe tudo; na onda 51, a Fundição acende suas forjas; na onda 61, o Bosque Fóssil desperta suas memórias petrificadas.',
     tactic: 'Cada setor tem seu próprio ecossistema de ameaças; as táticas que funcionavam no anterior podem não bastar. Quando a rota chega ao fim, ela recomeça do início — mas os inimigos voltam muito mais fortes.',
     accent: '#9dff2e',
     icon: paintIcon('thrusters', '#9dff2e', 48),
