@@ -68,6 +68,8 @@ export class GameScene implements Scene, World {
   private comboT = 0;
   private gemStreak = 0;
   private gemStreakT = 0;
+  /** runTime do último abate — usado pra seta de inimigo perdido. */
+  private lastKillTime = 0;
   private camX = 0;
   private camY = 0;
   private trauma = 0;
@@ -308,6 +310,7 @@ export class GameScene implements Scene, World {
   onEnemyKilled(e: Enemy, killer: Player | null): void {
     this.kills++;
     this.killScore += e.score;
+    this.lastKillTime = this.runTime;
     this.combo++;
     this.comboT = BAL.combo.window;
     this.tutorialDir?.noteKill();
@@ -385,6 +388,63 @@ export class GameScene implements Scene, World {
     this.hitStop(0.3, 0.06);
     this.shake(20);
     this.audio.play('record');
+  }
+
+  /**
+   * Seta sutil e piscante na borda da tela apontando pro inimigo mais próximo,
+   * ativada após 25s sem nenhum abate (inimigo "sumiu" no mapa).
+   */
+  private renderEnemyArrow(ctx: CanvasRenderingContext2D, w: number, h: number, time: number, glow: boolean): void {
+    const idleTime = this.runTime - this.lastKillTime;
+    if (idleTime < 25) return;
+    if (this.state !== 'playing') return;
+    const nearest = this.enemies.nearest(this.player.x, this.player.y, Infinity);
+    if (!nearest) return;
+
+    // Screen-space position of the enemy
+    const sx = nearest.x - this.camX + w / 2;
+    const sy = nearest.y - this.camY + h / 2;
+    const margin = 28;
+
+    // If enemy is on-screen (or close enough), no arrow needed
+    if (sx > -margin && sx < w + margin && sy > -margin && sy < h + margin) return;
+
+    const cx = w / 2;
+    const cy = h / 2;
+    const ang = Math.atan2(sy - cy, sx - cx);
+
+    // Clamp arrow position to screen edge along the enemy direction
+    const tx = Math.cos(ang);
+    const ty = Math.sin(ang);
+    const kx = tx !== 0 ? (w / 2 - margin) / Math.abs(tx) : Infinity;
+    const ky = ty !== 0 ? (h / 2 - margin) / Math.abs(ty) : Infinity;
+    const k = Math.min(kx, ky);
+    const ax = cx + tx * k;
+    const ay = cy + ty * k;
+
+    // Pulse bem sutil: alpha entre 0.15 e 0.45
+    const pulse = 0.3 + Math.sin(time * 4) * 0.15;
+    const color = '#ffc857';
+
+    ctx.save();
+    ctx.translate(ax, ay);
+    ctx.rotate(ang);
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = color;
+    if (glow) {
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 5;
+    }
+    // Seta pequena e discreta
+    ctx.beginPath();
+    ctx.moveTo(10, 0);
+    ctx.lineTo(-6, 6);
+    ctx.lineTo(-3, 0);
+    ctx.lineTo(-6, -6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    ctx.globalAlpha = 1;
   }
 
   private finalize(): void {
@@ -557,6 +617,7 @@ export class GameScene implements Scene, World {
       ? { hp: boss.hp, maxHp: boss.maxHp, name: (this.waves.bossInfo?.() ?? sectorForWave(this.waves.wave).boss).name }
       : null;
     this.hud.render(ctx, hv, vp, time, gfx.glow);
+    this.renderEnemyArrow(ctx, w, h, time, gfx.glow);
   }
 }
 

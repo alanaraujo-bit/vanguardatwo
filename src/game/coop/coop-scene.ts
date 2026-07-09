@@ -74,6 +74,8 @@ export class CoopScene implements Scene {
   private sectorFlashColor = '#ffffff';
   private ended = false;
   private lastLocalHp = -1;
+  /** Último tick do snapshot em que houve um abate — usado pra seta de inimigo perdido. */
+  private lastKillTick = 0;
 
   private readonly hudView: HudView = {
     hp: 0, maxHp: 1, level: 1, xp: 0, xpNeed: 1,
@@ -246,6 +248,7 @@ export class CoopScene implements Scene {
           break;
         }
         case 'kill': {
+          this.lastKillTick = this.currSnap?.tick ?? 0;
           const debris = this.debrisFor(ev.k);
           const big = enemyRadius(ev.k) >= 18;
           this.particles.burst(debris, ev.x, ev.y, {
@@ -495,6 +498,7 @@ export class CoopScene implements Scene {
       ctx.globalAlpha = 1;
     }
 
+    this.renderEnemyArrow(ctx, w, h, snap, time, gfx.glow);
     this.renderPartnerArrow(ctx, w, h);
     this.deps.game.input.renderStick(ctx, gfx.glow, true);
 
@@ -573,6 +577,53 @@ export class CoopScene implements Scene {
     ctx.globalAlpha = 1;
   }
 
+  /** Seta sutil piscante apontando pro inimigo mais próximo, ativada após 25s sem abates (co-op). */
+  private renderEnemyArrow(ctx: CanvasRenderingContext2D, w: number, h: number, snap: Snap | null, time: number, glow: boolean): void {
+    if (!snap || this.local.dead) return;
+    const simSeconds = snap.tick / SIM_RATE;
+    const idleTime = simSeconds - (this.lastKillTick / SIM_RATE);
+    if (idleTime < 25) return;
+
+    const target = this.replica.nearestEnemy(this.local.x, this.local.y, Infinity);
+    if (!target) return;
+
+    const sx = target.x - this.camX + w / 2;
+    const sy = target.y - this.camY + h / 2;
+    const margin = 28;
+    if (sx > -margin && sx < w + margin && sy > -margin && sy < h + margin) return;
+
+    const cx = w / 2;
+    const cy = h / 2;
+    const ang = Math.atan2(sy - cy, sx - cx);
+    const tx = Math.cos(ang);
+    const ty = Math.sin(ang);
+    const kx = tx !== 0 ? (w / 2 - margin) / Math.abs(tx) : Infinity;
+    const ky = ty !== 0 ? (h / 2 - margin) / Math.abs(ty) : Infinity;
+    const k = Math.min(kx, ky);
+    const ax = cx + tx * k;
+    const ay = cy + ty * k;
+
+    const pulse = 0.3 + Math.sin(time * 4) * 0.15;
+    const color = '#ffc857';
+    ctx.save();
+    ctx.translate(ax, ay);
+    ctx.rotate(ang);
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = color;
+    if (glow) {
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 5;
+    }
+    ctx.beginPath();
+    ctx.moveTo(10, 0);
+    ctx.lineTo(-6, 6);
+    ctx.lineTo(-3, 0);
+    ctx.lineTo(-6, -6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
 }
 
 export type { PlayerSnap };
