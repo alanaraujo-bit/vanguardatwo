@@ -28,5 +28,7 @@ declare global {
         };
       };
     };
+    /** Set by Mercado Pago's security.js once it loads — device fingerprint for fraud scoring. */
+    MP_DEVICE_SESSION_ID?: string;
   }
 }

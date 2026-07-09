@@ -58,6 +58,8 @@ export async function createPixCharge(opts: {
   payerLastName?: string;
   externalReference: string;
   idempotencyKey: string;
+  /** window.MP_DEVICE_SESSION_ID from Mercado Pago's security.js — improves fraud scoring / approval rate. */
+  deviceId?: string;
 }): Promise<PixCharge> {
   const amount = (Math.round(opts.amountCents) / 100).toFixed(2);
   const res = await fetch(`${MP_API}/v1/orders`, {
@@ -66,6 +68,7 @@ export async function createPixCharge(opts: {
       Authorization: `Bearer ${accessToken()}`,
       'Content-Type': 'application/json',
       'X-Idempotency-Key': opts.idempotencyKey,
+      ...(opts.deviceId ? { 'X-meli-session-id': opts.deviceId } : {}),
     },
     body: JSON.stringify({
       type: 'online',

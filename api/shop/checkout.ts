@@ -75,6 +75,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     );
     purchaseId = inserted.rows[0].id as string;
 
+    const deviceId = typeof body.deviceId === 'string' ? body.deviceId : undefined;
     const charge = await createPixCharge({
       amountCents: pack.priceCents,
       description: `BALUARTE — ${pack.name}`,
@@ -85,6 +86,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       payerLastName,
       externalReference: purchaseId,
       idempotencyKey: purchaseId,
+      deviceId,
     });
 
     await db().query(

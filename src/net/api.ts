@@ -93,8 +93,8 @@ export const api = {
     request<MeResponse>('/api/profile', { method: 'PATCH', body: { name }, timeoutMs: 10_000 }),
   realtimeToken: () =>
     request<{ token: string }>('/api/realtime-token', { timeoutMs: 5_000 }),
-  checkout: (packId: string) =>
-    request<CheckoutResponse>('/api/shop/checkout', { method: 'POST', body: { packId }, timeoutMs: 15_000 }),
+  checkout: (packId: string, deviceId?: string) =>
+    request<CheckoutResponse>('/api/shop/checkout', { method: 'POST', body: { packId, deviceId }, timeoutMs: 15_000 }),
   purchaseStatus: (purchaseId: string) =>
     request<PurchaseStatusResponse>(`/api/shop/status?purchaseId=${encodeURIComponent(purchaseId)}`, { timeoutMs: 8_000 }),
 };

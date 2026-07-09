@@ -656,7 +656,7 @@ export class UI {
     this.checkoutBusy = true;
     this.audio.play('confirm');
     try {
-      const res = await api.checkout(pack.id);
+      const res = await api.checkout(pack.id, window.MP_DEVICE_SESSION_ID);
       storeSync.track(res.purchaseId);
       this.showPixPay(pack, res);
     } catch {

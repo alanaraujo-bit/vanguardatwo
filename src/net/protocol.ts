@@ -118,6 +118,8 @@ export interface NameRequest {
 
 export interface CheckoutRequest {
   packId: string;
+  /** window.MP_DEVICE_SESSION_ID from Mercado Pago's security.js, if it loaded in time — fraud-scoring signal, not required. */
+  deviceId?: string;
 }
 
 export interface CheckoutResponse {
