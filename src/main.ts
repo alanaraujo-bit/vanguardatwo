@@ -1,6 +1,7 @@
 import { Game } from './core/game';
 import { defaultStickAnchor, Input, isTyping } from './core/input';
 import { SaveSystem } from './core/save';
+import { joystickSkinById } from './game/joystick-skins';
 import { Viewport } from './core/viewport';
 import { AudioEngine } from './audio/audio';
 import { Music } from './audio/music';
@@ -85,6 +86,7 @@ function applySettings(): void {
   audio.musicOn = cfg.music;
   audio.hapticsOn = cfg.haptics;
   input.scheme = cfg.controlScheme;
+  input.joystickSkinDef = joystickSkinById(save.data.joystickSkin);
   syncStickAnchor();
   music.sync();
   applyGraphicsSettings();

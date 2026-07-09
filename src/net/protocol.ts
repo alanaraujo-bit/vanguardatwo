@@ -25,6 +25,8 @@ export interface CloudSave {
   campaignStars: Record<string, number>;
   skin: string;
   ownedSkins: string[];
+  joystickSkin: string;
+  ownedJoystickSkins: string[];
   totalGems: number;
   bossesKilled: string[];
   achievements: Record<string, number>;
@@ -85,6 +87,8 @@ export interface LeaderboardEntry {
   value: number;
   /** Equipped ship skin id — see src/game/skins.ts. */
   skin: string;
+  /** Equipped joystick skin id — see src/game/joystick-skins.ts. */
+  joystickSkin: string;
 }
 
 export interface LeaderboardResponse {
@@ -158,6 +162,8 @@ export const SAVE_LIMITS = {
   campaignLevel: 11,
   /** Máximo de skins que qualquer um pode ter (5 pagas + 1 padrão). */
   ownedSkins: 6,
+  /** Máximo de joystick skins (6 pagas + 1 padrão). */
+  ownedJoystickSkins: 7,
   /** Máx de achievements. */
   achievements: 20,
 } as const;
@@ -271,6 +277,10 @@ export function clampCloudSave(raw: Partial<CloudSave> | null | undefined): Clou
     ownedSkins: Array.isArray(r.ownedSkins)
       ? r.ownedSkins.filter((s): s is string => typeof s === 'string').slice(0, SAVE_LIMITS.ownedSkins)
       : [],
+    joystickSkin: typeof r.joystickSkin === 'string' ? r.joystickSkin.slice(0, 32) : 'cibernetico',
+    ownedJoystickSkins: Array.isArray(r.ownedJoystickSkins)
+      ? r.ownedJoystickSkins.filter((s): s is string => typeof s === 'string').slice(0, SAVE_LIMITS.ownedJoystickSkins)
+      : [],
     totalGems: int(r.totalGems, 9_999_999),
     bossesKilled: Array.isArray(r.bossesKilled)
       ? r.bossesKilled.filter((s): s is string => typeof s === 'string').slice(0, 5)
@@ -309,6 +319,8 @@ export function mergeCloudSaves(a: CloudSave, b: CloudSave, coinsFrom: 'max' | '
     campaignStars: { ...b.campaignStars, ...a.campaignStars },
     skin: a.skin !== 'aegis' ? a.skin : b.skin,
     ownedSkins: [...new Set([...b.ownedSkins, ...a.ownedSkins])],
+    joystickSkin: a.joystickSkin !== 'cibernetico' ? a.joystickSkin : b.joystickSkin,
+    ownedJoystickSkins: [...new Set([...b.ownedJoystickSkins, ...a.ownedJoystickSkins])],
     totalGems: Math.max(a.totalGems, b.totalGems),
     bossesKilled: [...new Set([...b.bossesKilled, ...a.bossesKilled])],
     achievements: { ...b.achievements, ...a.achievements },
@@ -361,6 +373,8 @@ export function applyCloudToSave(d: SaveData, c: CloudSave): void {
   d.campaignStars = { ...c.campaignStars, ...d.campaignStars };
   d.skin = c.skin !== 'aegis' ? c.skin : d.skin;
   d.ownedSkins = [...new Set([...c.ownedSkins, ...d.ownedSkins])];
+  d.joystickSkin = c.joystickSkin !== 'cibernetico' ? c.joystickSkin : d.joystickSkin;
+  d.ownedJoystickSkins = [...new Set([...c.ownedJoystickSkins, ...d.ownedJoystickSkins])];
   d.totalGems = Math.max(d.totalGems, c.totalGems);
   d.bossesKilled = [...new Set([...c.bossesKilled, ...d.bossesKilled])];
   d.achievements = { ...c.achievements, ...d.achievements };

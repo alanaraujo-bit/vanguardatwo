@@ -7,6 +7,7 @@ import { COIN_SHAPE, GEM_SHAPE, MAX_GEMS, heartSprite } from './pickups';
 import { SHIP_SHAPE } from './player';
 import { firstWaveOf, SECTOR_LEN, SECTORS } from './sectors';
 import { SKINS } from './skins';
+import { JOYSTICK_SKINS } from './joystick-skins';
 import { paintIcon, UPGRADE_DEFS } from './upgrades';
 
 /**
@@ -676,24 +677,55 @@ function skinCodexIcon(skin: typeof SKINS[number], size = 48): HTMLCanvasElement
   }), size);
 }
 
-const skinEntries: CodexEntry[] = SKINS.map((skin) => ({
-  id: `skin-${skin.id}`,
+// ————— helper para renderizar ícone de joystick skin —————
+
+function joystickSkinCodexIcon(skin: typeof JOYSTICK_SKINS[number], size = 48): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = canvas.height = size * dpr;
+  canvas.style.width = canvas.style.height = `${size}px`;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+  ctx.scale(dpr, dpr);
+  const cx = size / 2;
+  const cy = size / 2;
+  ctx.globalAlpha = skin.ringFillActive;
+  ctx.fillStyle = skin.ringColor;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 18, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = skin.ringStrokeActive;
+  ctx.strokeStyle = skin.ringColor;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 18, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.globalAlpha = skin.knobActive;
+  ctx.fillStyle = skin.knobColor;
+  ctx.beginPath();
+  ctx.arc(cx + 3, cy + 2, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  return canvas;
+}
+
+const joystickSkinEntries: CodexEntry[] = JOYSTICK_SKINS.map((skin) => ({
+  id: `joystick-${skin.id}`,
   name: skin.name,
   tagline: skin.desc,
   lore: skin.price === 0
-    ? 'A fuselagem padrão de fábrica, com assinatura ciano. Leve, equilibrada e responsiva — a escolha certa para qualquer missão, sem custo adicional.'
-    : `Uma fuselagem de edição limitada, com geometria exclusiva e assinatura energética própria. Adquirida no Hangar por ${skin.price} moedas, ela altera não só a silhueta da nave, mas também a cor de cada disparo, o brilho das lâminas orbitais e o pulso da nova — uma identidade visual completa no campo de batalha.`,
+    ? 'O mapeamento tátil padrão da frota, com assinatura ciano. O anel responde ao toque com um brilho sutil e o manípulo centraliza instantaneamente — a escolha de todo piloto que prefere precisão sem firulas.'
+    : `Um circuito de comando personalizado, com paleta de cores e assinatura luminosa próprias. Adquirido no Hangar por ${skin.price} moedas, ele altera a cor do anel, do manípulo e do brilho de resposta — uma identidade visual que você sente no polegar a cada partida.`,
   tactic: skin.price === 0
-    ? 'Sempre disponível, sem custo. O desempenho é idêntico ao de qualquer outra fuselagem — a escolha é puramente estética.'
-    : 'Cada fuselagem tem sua própria identidade visual, mas nenhuma oferece vantagem mecânica: a escolha é puramente estética. Compre no Hangar pela aba FUSELAGEM e equipe quantas quiser — a skin ativa persiste entre partidas.',
-  accent: skin.color,
-  icon: skinCodexIcon(skin, 52),
+    ? 'Sempre disponível, sem custo. O desempenho é idêntico ao de qualquer outro analógico — a escolha é puramente estética e não afeta a jogabilidade.'
+    : 'Cada analógico tem sua própria identidade visual, mas nenhum oferece vantagem mecânica: a escolha é puramente estética. Compre no Hangar pela aba ANALÓGICO e equipe quantos quiser — o tema ativo persiste entre partidas.',
+  accent: skin.accent,
+  icon: joystickSkinCodexIcon(skin, 52),
   stats: [
     { label: 'Preço', value: skin.price === 0 ? 'Grátis (padrão)' : `${skin.price} moedas` },
-    { label: 'Cor do casco', value: skin.color },
-    { label: 'Cor das balas', value: skin.bulletColor },
-    { label: 'Cor das lâminas', value: skin.bladeColor },
-    { label: 'Cor da nova', value: skin.novaColor },
+    { label: 'Cor do anel', value: skin.ringColor },
+    { label: 'Cor do manípulo', value: skin.knobColor },
+    { label: 'Brilho ativo', value: skin.glowColor },
   ],
 }));
 
@@ -842,7 +874,7 @@ const systemEntries: CodexEntry[] = [
 export const CODEX_INTRO = 'Referência completa de tudo que existe no Baluarte: nave, ameaças, poderes e recursos.';
 
 export const CODEX: readonly CodexCategory[] = [
-  { id: 'ship', label: 'Nave', intro: 'A única unidade ainda em campo contra a Ruína.', entries: [shipEntry, ...skinEntries] },
+  { id: 'ship', label: 'Nave', intro: 'A única unidade ainda em campo contra a Ruína.', entries: [shipEntry, ...skinEntries, ...joystickSkinEntries] },
   { id: 'enemies', label: 'Ameaças', intro: 'Toda ameaça que você vai enfrentar, setor por setor: da Ruína ao Arquivo Magnético.', entries: enemyEntries },
   { id: 'upgrades', label: 'Combate', intro: 'Melhorias temporárias, escolhidas ao subir de nível durante a partida.', entries: upgradeEntries },
   { id: 'meta', label: 'Hangar', intro: 'Melhorias permanentes, compradas com moedas entre partidas.', entries: metaEntries },

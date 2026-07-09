@@ -10,6 +10,7 @@ import { CODEX, CODEX_INTRO, type CodexCategoryId, type CodexEntry } from '../ga
 import { META_DEFS, metaCost, metaLevel } from '../game/meta';
 import { SHIP_SHAPE } from '../game/player';
 import { SKINS, skinById } from '../game/skins';
+import { JOYSTICK_SKINS } from '../game/joystick-skins';
 import { formatBRL, STORE_PACKS, type StorePackDef } from '../game/store';
 import { paintIcon, type UpgradeDef } from '../game/upgrades';
 import { drawSprite, shapeSprite } from '../fx/sprites';
@@ -441,11 +442,12 @@ export class UI {
     s.appendChild(el('h2', 'heading', S.shopTitle));
     s.appendChild(el('div', 'subheading', S.shopSub));
 
-    // Tab row: melhorias / skins
+    // Tab row: melhorias / skins / analógicos
     const tabs = el('div', 'row codex-tabs shop-tabs');
     const showMeta = (): void => this.showShop();
     tabs.appendChild(this.codexTabBtn(S.upgrades, true, showMeta));
     tabs.appendChild(this.codexTabBtn(S.skinTab, false, () => this.showSkinShop()));
+    tabs.appendChild(this.codexTabBtn(S.joystickSkinTab, false, () => this.showJoystickSkinShop()));
     s.appendChild(tabs);
 
     const list = el('div', 'scroll list');
@@ -576,6 +578,133 @@ export class UI {
 
     s.appendChild(list);
     this.open('skinsshop');
+  }
+
+  // ————— joystick skins (no hangar) —————
+
+  showJoystickSkinShop(): void {
+    this.hideAll();
+    const s = this.screen('joystickskinshop');
+
+    const header = el('div', 'row header');
+    header.appendChild(this.btn(`‹ ${S.back}`, 'ghost small', () => this.showShop()));
+    header.appendChild(el('div', 'grow'));
+    header.appendChild(this.coinChip(this.save.data.coins, () => this.showStore()));
+    s.appendChild(header);
+
+    s.appendChild(el('h2', 'heading', S.joystickSkins));
+    s.appendChild(el('div', 'subheading', S.joystickSkinsSub));
+
+    const list = el('div', 'scroll col cards mode-list');
+    const owned = new Set(this.save.data.ownedJoystickSkins);
+    const current = this.save.data.joystickSkin;
+
+    JOYSTICK_SKINS.forEach((skin, i) => {
+      const isOwned = skin.price === 0 || owned.has(skin.id);
+      const isEquipped = current === skin.id;
+      const card = el('button', `card skin-card${isOwned ? '' : ' locked'}${isEquipped ? ' equipped' : ''}`);
+      card.style.setProperty('--i', String(i));
+      card.style.setProperty('--accent', skin.accent);
+
+      // Joystick icon preview
+      const icon = el('div', 'icon-wrap skin-icon-wrap');
+      icon.appendChild(this.joystickSkinIcon(skin, 44));
+      card.appendChild(icon);
+
+      const body = el('div', 'grow');
+      body.appendChild(el('div', 'item-name', skin.name));
+      body.appendChild(el('div', 'item-desc', skin.desc));
+
+      // Price or status
+      if (isOwned) {
+        const status = el('div', 'skin-status');
+        if (isEquipped) {
+          status.appendChild(el('span', 'chip small equipped-chip', `${S.joystickSkinEquipped} ✓`));
+        } else {
+          status.appendChild(this.btn(S.joystickSkinEquip, 'ghost small', () => {
+            if (this.save.data.joystickSkin === skin.id) return;
+            this.save.data.joystickSkin = skin.id;
+            this.save.persist();
+            this.audio.play('confirm');
+            this.showJoystickSkinShop();
+          }));
+        }
+        body.appendChild(status);
+      } else {
+        const afford = this.save.data.coins >= skin.price;
+        const priceBtn = this.btn(String(skin.price), `buy small${afford ? '' : ' locked'}`, () => {
+          if (this.save.data.coins < skin.price) {
+            this.audio.play('deny');
+            return;
+          }
+          this.save.data.coins -= skin.price;
+          this.save.data.ownedJoystickSkins.push(skin.id);
+          this.save.data.joystickSkin = skin.id;
+          this.save.persist();
+          this.audio.play('buy');
+          this.showJoystickSkinShop();
+        });
+        priceBtn.prepend(el('span', 'coin-dot'));
+        body.appendChild(priceBtn);
+      }
+      card.appendChild(body);
+      card.appendChild(el('span', 'mode-chevron', isEquipped ? '✓' : isOwned ? '' : '🔒'));
+
+      card.addEventListener('pointerdown', () => this.audio.play('tap'));
+      card.addEventListener('click', () => {
+        if (!isOwned) {
+          this.audio.play('deny');
+          return;
+        }
+        if (isEquipped) return;
+        this.save.data.joystickSkin = skin.id;
+        this.save.persist();
+        this.audio.play('confirm');
+        this.showJoystickSkinShop();
+      });
+      list.appendChild(card);
+    });
+
+    s.appendChild(list);
+    this.open('joystickskinshop');
+  }
+
+  /** Paint a single joystick skin into a canvas icon (ring + knob). */
+  private joystickSkinIcon(sd: typeof JOYSTICK_SKINS[number], size: number): HTMLCanvasElement {
+    const canvas = document.createElement('canvas');
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = canvas.height = size * dpr;
+    canvas.style.width = canvas.style.height = `${size}px`;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return canvas;
+    ctx.scale(dpr, dpr);
+    const cx = size / 2;
+    const cy = size / 2;
+    // Outer ring (fill)
+    ctx.globalAlpha = sd.ringFillActive;
+    ctx.fillStyle = sd.ringColor;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 18, 0, Math.PI * 2);
+    ctx.fill();
+    // Outer ring (stroke)
+    ctx.globalAlpha = sd.ringStrokeActive;
+    ctx.strokeStyle = sd.ringColor;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 18, 0, Math.PI * 2);
+    ctx.stroke();
+    // Glow aura
+    ctx.shadowColor = sd.glowColor;
+    ctx.shadowBlur = 10;
+    // Knob (slightly offset for visual interest)
+    ctx.globalAlpha = sd.knobActive;
+    ctx.fillStyle = sd.knobColor;
+    ctx.beginPath();
+    ctx.arc(cx + 4, cy + 3, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+    return canvas;
   }
 
   /** Paint a single skin's ship into a canvas icon (for skin cards). */

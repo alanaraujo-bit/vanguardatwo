@@ -258,6 +258,19 @@ export const S = {
   skinNotEnoughCoins: 'Moedas insuficientes.',
   skinTab: 'FUSELAGEM',
 
+  // ————— joystick skins —————
+  joystickSkins: 'ANALÓGICOS',
+  joystickSkinsSub: 'Personalize o visual do seu analógico virtual. Cada tema muda as cores do anel e do manípulo.',
+  joystickSkinEquip: 'EQUIPAR',
+  joystickSkinEquipped: 'EQUIPADO',
+  joystickSkinOwned: 'POSSUÍDO',
+  joystickSkinBuy: 'COMPRAR',
+  joystickSkinDefault: 'Sempre disponível',
+  joystickSkinEquippedNotice: 'Analógico equipado com sucesso!',
+  joystickSkinPurchaseNotice: 'Novo analógico adquirido!',
+  joystickSkinNotEnoughCoins: 'Moedas insuficientes.',
+  joystickSkinTab: 'ANALÓGICO',
+
   // ————— conquistas —————
   achievements: 'CONQUISTAS',
   achievementsSub: 'Desafios e marcos da sua jornada como piloto',

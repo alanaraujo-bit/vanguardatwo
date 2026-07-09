@@ -19,7 +19,7 @@ export interface Queryable {
  * to CloudSave without a matching update here.
  */
 export const SAVE_COLS =
-  'coins, meta, best_wave, best_score, best_time, best_coins, runs, total_kills, total_time, tutorial_done, settings, campaign_level, campaign_stars, skin, owned_skins, total_gems, bosses_killed, achievements';
+  'coins, meta, best_wave, best_score, best_time, best_coins, runs, total_kills, total_time, tutorial_done, settings, campaign_level, campaign_stars, skin, owned_skins, joystick_skin, owned_joystick_skins, total_gems, bosses_killed, achievements';
 
 /**
  * Shared pg pool, reused across invocations of a warm serverless instance.
@@ -56,6 +56,8 @@ export interface SaveRow {
   campaign_stars: Record<string, number>;
   skin: string;
   owned_skins: string[];
+  joystick_skin: string;
+  owned_joystick_skins: string[];
   total_gems: string | number;
   bosses_killed: string[];
   achievements: Record<string, number>;
@@ -82,6 +84,8 @@ export function cloudSaveFromRow(row: SaveRow): CloudSave {
     campaignStars: row.campaign_stars ?? {},
     skin: row.skin ?? 'aegis',
     ownedSkins: row.owned_skins ?? [],
+    joystickSkin: row.joystick_skin ?? 'cibernetico',
+    ownedJoystickSkins: row.owned_joystick_skins ?? [],
     totalGems: Number(row.total_gems ?? 0),
     bossesKilled: row.bosses_killed ?? [],
     achievements: row.achievements ?? {},
@@ -94,14 +98,15 @@ export async function writeCloudSave(q: Queryable, playerId: string, save: Cloud
        coins = $2, meta = $3, best_wave = $4, best_score = $5, best_time = $6,
        best_coins = $7, runs = $8, total_kills = $9, total_time = $10,
        tutorial_done = $11, settings = $12, campaign_level = $13, campaign_stars = $14,
-       skin = $15, owned_skins = $16, total_gems = $17, bosses_killed = $18,
-       achievements = $19, updated_at = now()
+       skin = $15, owned_skins = $16, joystick_skin = $17, owned_joystick_skins = $18,
+       total_gems = $19, bosses_killed = $20, achievements = $21, updated_at = now()
      where player_id = $1`,
     [
       playerId, save.coins, JSON.stringify(save.meta), save.bestWave, save.bestScore,
       save.bestTime, save.bestCoins, save.runs, save.totalKills, save.totalTime,
       save.tutorialDone, save.settings ? JSON.stringify(save.settings) : null, save.campaignLevel,
       JSON.stringify(save.campaignStars), save.skin, JSON.stringify(save.ownedSkins),
+      save.joystickSkin, JSON.stringify(save.ownedJoystickSkins),
       save.totalGems, JSON.stringify(save.bossesKilled), JSON.stringify(save.achievements),
     ],
   );

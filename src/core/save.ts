@@ -133,6 +133,10 @@ export interface SaveData {
   skin: string;
   /** Owned skin IDs (purchased with coins). */
   ownedSkins: string[];
+  /** Equipped joystick skin ID (default 'cibernetico'). */
+  joystickSkin: string;
+  /** Owned joystick skin IDs (purchased with coins). */
+  ownedJoystickSkins: string[];
   /** Total gems collected across all runs (conta cada coleta como 1). */
   totalGems: number;
   /** Boss kinds already killed at least once (e.g. 'boss', 'queen', 'archivist'). */
@@ -168,6 +172,8 @@ function defaults(): SaveData {
     campaignStars: {},
     skin: 'aegis',
     ownedSkins: [],
+    joystickSkin: 'cibernetico',
+    ownedJoystickSkins: [],
     totalGems: 0,
     bossesKilled: [],
     achievements: {},
@@ -204,6 +210,8 @@ function parse(raw: string): SaveData {
     campaignStars: (parsed.campaignStars ?? {}),
     skin: typeof parsed.skin === 'string' ? parsed.skin : 'aegis',
     ownedSkins: Array.isArray(parsed.ownedSkins) ? parsed.ownedSkins : [],
+    joystickSkin: typeof parsed.joystickSkin === 'string' ? parsed.joystickSkin : 'cibernetico',
+    ownedJoystickSkins: Array.isArray(parsed.ownedJoystickSkins) ? parsed.ownedJoystickSkins : [],
     totalGems: typeof parsed.totalGems === 'number' ? parsed.totalGems : 0,
     bossesKilled: Array.isArray(parsed.bossesKilled) ? parsed.bossesKilled.filter((s): s is string => typeof s === 'string') : [],
     achievements: (parsed.achievements && typeof parsed.achievements === 'object' && !Array.isArray(parsed.achievements))

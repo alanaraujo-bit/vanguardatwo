@@ -102,3 +102,7 @@ alter table saves add column if not exists owned_skins jsonb not null default '[
 alter table saves add column if not exists total_gems bigint not null default 0;
 alter table saves add column if not exists bosses_killed jsonb not null default '[]';
 alter table saves add column if not exists achievements jsonb not null default '{}';
+
+-- Joystick skins (personalização do analógico virtual).
+alter table saves add column if not exists joystick_skin text not null default 'cibernetico';
+alter table saves add column if not exists owned_joystick_skins jsonb not null default '[]';

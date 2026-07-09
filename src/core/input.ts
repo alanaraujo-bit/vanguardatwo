@@ -1,5 +1,6 @@
 import type { ControlScheme } from './save.js';
 import { clamp, len } from './utils';
+import { joystickSkinById, type JoystickSkinDef } from '../game/joystick-skins.js';
 
 const STICK_RADIUS = 46;
 const DEAD_ZONE = 5;
@@ -57,6 +58,9 @@ export class Input {
    */
   anchorX = 0;
   anchorY = 0;
+
+  /** Currently equipped joystick skin (injected by main.ts on boot/settings change). */
+  joystickSkinDef: JoystickSkinDef = joystickSkinById('cibernetico');
 
   private pointerId: number | null = null;
   private readonly keys = new Set<string>();
@@ -171,14 +175,15 @@ export class Input {
   }
 
   private renderFloatingStick(ctx: CanvasRenderingContext2D): void {
-    ctx.globalAlpha = 0.2;
-    ctx.strokeStyle = '#7df3ff';
+    const sd = this.joystickSkinDef;
+    ctx.globalAlpha = sd.ringStrokeActive;
+    ctx.strokeStyle = sd.ringColor;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(this.stickOX, this.stickOY, FLOAT_RING_RADIUS, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.globalAlpha = 0.35;
-    ctx.fillStyle = '#7df3ff';
+    ctx.globalAlpha = sd.knobActive;
+    ctx.fillStyle = sd.knobColor;
     ctx.beginPath();
     ctx.arc(this.stickOX + this.moveX * FLOAT_KNOB_TRAVEL, this.stickOY + this.moveY * FLOAT_KNOB_TRAVEL, FLOAT_KNOB_RADIUS, 0, Math.PI * 2);
     ctx.fill();
@@ -188,26 +193,27 @@ export class Input {
   /** Always-on pad: faint pill when idle, brightens and glows once a thumb grabs it. */
   private renderFixedPad(ctx: CanvasRenderingContext2D, glow: boolean): void {
     const { anchorX: ox, anchorY: oy, stickActive: active } = this;
+    const sd = this.joystickSkinDef;
 
-    ctx.globalAlpha = active ? 0.14 : 0.08;
-    ctx.fillStyle = '#7df3ff';
+    ctx.globalAlpha = active ? sd.ringFillActive : sd.ringFillIdle;
+    ctx.fillStyle = sd.ringColor;
     ctx.beginPath();
     ctx.arc(ox, oy, FIXED_RING_RADIUS, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.globalAlpha = active ? 0.5 : 0.26;
-    ctx.strokeStyle = '#7df3ff';
+    ctx.globalAlpha = active ? sd.ringStrokeActive : sd.ringStrokeIdle;
+    ctx.strokeStyle = sd.ringColor;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(ox, oy, FIXED_RING_RADIUS, 0, Math.PI * 2);
     ctx.stroke();
 
     if (glow && active) {
-      ctx.shadowColor = '#7df3ff';
+      ctx.shadowColor = sd.glowColor;
       ctx.shadowBlur = 16;
     }
-    ctx.globalAlpha = active ? 0.85 : 0.4;
-    ctx.fillStyle = '#7df3ff';
+    ctx.globalAlpha = active ? sd.knobActive : sd.knobIdle;
+    ctx.fillStyle = sd.knobColor;
     ctx.beginPath();
     ctx.arc(ox + this.moveX * FIXED_KNOB_TRAVEL, oy + this.moveY * FIXED_KNOB_TRAVEL, FIXED_KNOB_RADIUS, 0, Math.PI * 2);
     ctx.fill();
