@@ -416,7 +416,6 @@ export class UI {
       list.appendChild(card);
     });
     s.appendChild(list);
-    s.appendChild(el('div', 'spacer'));
     this.open('campaignselect');
   }
 
