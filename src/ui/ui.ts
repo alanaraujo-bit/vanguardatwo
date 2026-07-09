@@ -364,7 +364,7 @@ export class UI {
     s.appendChild(el('h2', 'heading', S.campaignTitle));
     s.appendChild(el('div', 'subheading', S.campaignSub));
 
-    const list = el('div', 'col cards mode-list');
+    const list = el('div', 'scroll col cards mode-list');
     CAMPAIGN.forEach((level, i) => {
       const unlocked = i < this.save.data.campaignLevel;
       const stars = this.save.data.campaignStars[level.id] ?? 0;
