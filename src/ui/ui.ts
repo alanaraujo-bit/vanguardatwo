@@ -1,4 +1,4 @@
-import { applyPreset, type BackgroundQuality, type FpsCap, type GraphicsPreset, type SaveSystem } from '../core/save';
+import { applyPreset, type BackgroundQuality, type ControlScheme, type FpsCap, type GraphicsPreset, type SaveSystem } from '../core/save';
 import { fmtTime } from '../core/utils';
 import type { AudioEngine } from '../audio/audio';
 import { S } from '../i18n/strings';
@@ -538,6 +538,7 @@ export class UI {
     const list = el('div', 'col list');
     list.appendChild(this.settingsCategoryRow(S.audioSettings, S.audioSettingsDesc, () => this.showAudioSettings()));
     list.appendChild(this.settingsCategoryRow(S.graphicsSettings, S.graphicsSettingsDesc, () => this.showGraphicsSettings()));
+    list.appendChild(this.settingsCategoryRow(S.controlsSettings, S.controlsSettingsDesc, () => this.showControlsSettings()));
     s.appendChild(list);
 
     const info = el('div', 'subheading stats-line',
@@ -576,6 +577,31 @@ export class UI {
     s.appendChild(list);
 
     this.open('audiosettings');
+  }
+
+  showControlsSettings(): void {
+    this.hideAll();
+    const s = this.screen('controlssettings');
+    const cfg = this.save.data.settings;
+    const rerender = (): void => this.showControlsSettings();
+
+    const header = el('div', 'row header');
+    header.appendChild(this.btn(`‹ ${S.back}`, 'ghost small', () => this.showSettings()));
+    s.appendChild(header);
+
+    s.appendChild(el('h2', 'heading', S.controlsSettings));
+
+    const schemes: Array<[ControlScheme, string]> = [
+      ['free', S.controlSchemeFree], ['bottomHalf', S.controlSchemeBottomHalf],
+    ];
+    s.appendChild(this.segmentRow(S.controlsSettings, schemes, () => cfg.controlScheme, (v) => {
+      cfg.controlScheme = v;
+    }, rerender));
+
+    const desc = cfg.controlScheme === 'free' ? S.controlSchemeFreeDesc : S.controlSchemeBottomHalfDesc;
+    s.appendChild(el('div', 'subheading preset-custom-note', desc));
+
+    this.open('controlssettings');
   }
 
   showGraphicsSettings(): void {

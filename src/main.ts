@@ -71,6 +71,7 @@ function applySettings(): void {
   audio.sfxOn = cfg.sfx;
   audio.musicOn = cfg.music;
   audio.hapticsOn = cfg.haptics;
+  input.scheme = cfg.controlScheme;
   music.sync();
   applyGraphicsSettings();
 }

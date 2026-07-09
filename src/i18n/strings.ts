@@ -80,6 +80,12 @@ export const S = {
   fpsCapLabel: 'Limite de quadros',
   fpsUncapped: 'Livre',
   fpsCounterLabel: 'Mostrar contador de FPS',
+  controlsSettings: 'CONTROLES',
+  controlsSettingsDesc: 'Como você move seu piloto',
+  controlSchemeFree: 'TELA INTEIRA',
+  controlSchemeBottomHalf: 'METADE INFERIOR',
+  controlSchemeFreeDesc: 'Toque em qualquer lugar da tela e arraste para mover.',
+  controlSchemeBottomHalfDesc: 'O movimento só é ativado tocando na metade inferior da tela — a parte de cima fica livre pra você enxergar o campo de batalha.',
 
   // ————— tutorial guiado —————
   tutSkip: 'PULAR TUTORIAL',

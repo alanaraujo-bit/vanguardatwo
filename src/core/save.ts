@@ -2,6 +2,12 @@ export type GraphicsPreset = 'low' | 'medium' | 'high' | 'ultra' | 'custom';
 export type BackgroundQuality = 'off' | 'low' | 'full';
 /** 0 = sem limite. */
 export type FpsCap = 0 | 30 | 60;
+/**
+ * 'free': touch starts anywhere on screen (today's behavior).
+ * 'bottomHalf': touch must start in the screen's bottom half, so the thumb
+ * (and the stick it draws) never covers the upper play field.
+ */
+export type ControlScheme = 'free' | 'bottomHalf';
 
 export interface GraphicsSettings {
   preset: GraphicsPreset;
@@ -28,6 +34,7 @@ export interface Settings {
   /** @deprecated Substituído por graphics.preset; só lido na migração de saves antigos. */
   lowFx: boolean;
   graphics: GraphicsSettings;
+  controlScheme: ControlScheme;
 }
 
 const GRAPHICS_PRESETS: Record<Exclude<GraphicsPreset, 'custom'>, Omit<GraphicsSettings, 'preset'>> = {
@@ -133,7 +140,10 @@ function defaults(): SaveData {
     onboarded: false,
     tutorialDone: false,
     meta: {},
-    settings: { sfx: true, music: true, haptics: true, lowFx: false, graphics: detectGraphicsPreset() },
+    settings: {
+      sfx: true, music: true, haptics: true, lowFx: false,
+      graphics: detectGraphicsPreset(), controlScheme: 'free',
+    },
     campaignLevel: 1,
   };
 }

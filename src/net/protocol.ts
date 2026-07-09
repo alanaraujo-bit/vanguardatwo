@@ -1,4 +1,4 @@
-import { applyPreset, type BackgroundQuality, type FpsCap, type GraphicsPreset, type GraphicsSettings, type SaveData, type Settings } from '../core/save.js';
+import { applyPreset, type BackgroundQuality, type ControlScheme, type FpsCap, type GraphicsPreset, type GraphicsSettings, type SaveData, type Settings } from '../core/save.js';
 import { META_DEFS } from '../game/meta.js';
 
 /**
@@ -149,6 +149,7 @@ function oneOf<T>(v: unknown, allowed: readonly T[], fallback: T): T {
 const GRAPHICS_PRESET_IDS: readonly GraphicsPreset[] = ['low', 'medium', 'high', 'ultra', 'custom'];
 const BACKGROUND_QUALITY_IDS: readonly BackgroundQuality[] = ['off', 'low', 'full'];
 const FPS_CAPS: readonly FpsCap[] = [0, 30, 60];
+const CONTROL_SCHEME_IDS: readonly ControlScheme[] = ['free', 'bottomHalf'];
 
 /** Untrusted payload from the network — never trust it wholesale, clamp field by field. */
 function clampGraphics(g: unknown): GraphicsSettings {
@@ -184,6 +185,7 @@ export function clampSettings(raw: unknown): Settings | null {
   return {
     sfx: s.sfx !== false, music: s.music !== false, haptics: s.haptics !== false, lowFx: s.lowFx === true,
     graphics: clampGraphics(s.graphics),
+    controlScheme: oneOf(s.controlScheme, CONTROL_SCHEME_IDS, 'free'),
   };
 }
 

@@ -1,3 +1,4 @@
+import type { ControlScheme } from './save.js';
 import { clamp, len } from './utils';
 
 const STICK_RADIUS = 46;
@@ -10,10 +11,10 @@ export function isTyping(e: Event): boolean {
 }
 
 /**
- * One-thumb virtual joystick: touch anywhere, drag to move. The origin trails
- * behind the finger when it travels past the stick radius, which keeps the
- * control responsive on direction reversals. Keyboard (WASD/arrows) is
- * supported for desktop play.
+ * One-thumb virtual joystick: touch (within the active zone) anywhere, drag
+ * to move. The origin trails behind the finger when it travels past the
+ * stick radius, which keeps the control responsive on direction reversals.
+ * Keyboard (WASD/arrows) is supported for desktop play.
  */
 export class Input {
   /** Normalized movement vector, magnitude in [0,1]. */
@@ -30,12 +31,16 @@ export class Input {
   /** True once the player has produced any movement (used by the tutorial). */
   hasMoved = false;
 
+  /** Which zone of the screen accepts the initial touch. Settings-driven. */
+  scheme: ControlScheme = 'free';
+
   private pointerId: number | null = null;
   private readonly keys = new Set<string>();
 
   constructor(canvas: HTMLCanvasElement) {
     canvas.addEventListener('pointerdown', (e) => {
       if (this.pointerId !== null) return;
+      if (this.scheme === 'bottomHalf' && e.clientY < window.innerHeight / 2) return;
       this.pointerId = e.pointerId;
       this.stickActive = true;
       this.stickOX = this.stickX = e.clientX;
