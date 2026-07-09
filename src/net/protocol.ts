@@ -83,6 +83,8 @@ export interface LeaderboardEntry {
   handle: string;
   name: string;
   value: number;
+  /** Equipped ship skin id — see src/game/skins.ts. */
+  skin: string;
 }
 
 export interface LeaderboardResponse {

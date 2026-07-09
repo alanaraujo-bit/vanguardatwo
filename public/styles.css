@@ -1096,6 +1096,12 @@ html, body {
   flex-shrink: 0;
 }
 .lb-rank.top { color: var(--amber); text-shadow: 0 0 10px rgba(255, 200, 87, 0.5); }
+.lb-skin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
 .lb-name {
   font-weight: 800;
   overflow: hidden;

@@ -1747,6 +1747,7 @@ export class UI {
           handle: session.player.handle,
           name: session.player.name,
           value: res.me.value,
+          skin: this.save.data.skin,
         }, board, true, res.entries.length));
       }
       if (!session.authed) {
@@ -1766,6 +1767,7 @@ export class UI {
     const row = el('button', `panel lb-row${mine ? ' lb-me' : ''}`);
     row.style.setProperty('--i', String(Math.min(i, 12)));
     row.appendChild(el('span', `lb-rank${entry.rank <= 3 ? ' top' : ''}`, `#${entry.rank}`));
+    row.appendChild(el('span', 'lb-skin')).appendChild(this.skinIcon(skinById(entry.skin), 30));
     row.appendChild(el('span', 'grow lb-name', entry.name));
     if (mine) row.appendChild(el('span', 'chip lb-you', S.rankYou));
     row.appendChild(el('span', 'lb-value', board === 'time' ? fmtTime(entry.value) : String(entry.value)));
