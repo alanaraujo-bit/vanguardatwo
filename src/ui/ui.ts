@@ -1455,7 +1455,14 @@ export class UI {
     head.appendChild(el('div', 'profile-handle', `@${profile.handle}`));
     head.appendChild(el('div', 'profile-since', `${S.memberSince} ${fmtMonthYear(profile.createdAt)}`));
     if (profile.stats.lastRunAt) {
-      head.appendChild(el('div', 'profile-last-online', `${S.lastOnline} ${fmtRelTime(profile.stats.lastRunAt)}`));
+      const onlineRow = el('div', 'profile-last-online');
+      const diff = (Date.now() - new Date(profile.stats.lastRunAt).getTime()) / 1000;
+      if (diff < 300) {
+        onlineRow.appendChild(el('span', 'online-dot'));
+        onlineRow.appendChild(el('span', 'online-badge', S.online));
+      }
+      onlineRow.appendChild(document.createTextNode(`${S.lastOnline} ${fmtRelTime(profile.stats.lastRunAt)}`));
+      head.appendChild(onlineRow);
     }
     body.appendChild(head);
 

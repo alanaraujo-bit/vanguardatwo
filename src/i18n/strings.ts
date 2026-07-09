@@ -165,6 +165,7 @@ export const S = {
   editName: 'EDITAR NOME',
   profileNotFound: 'Piloto não encontrado.',
   lastOnline: 'última vez online',
+  online: 'ONLINE',
   recordWave: 'Onda',
   recordScore: 'Pontuação',
   recordTime: 'Tempo',
