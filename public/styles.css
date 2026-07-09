@@ -824,6 +824,50 @@ html, body {
 }
 .mode-card.locked .mode-chevron { font-size: 18px; }
 
+/* ————— level complete screen ————— */
+
+.s-levelcomplete {
+  justify-content: center;
+  background: rgba(4, 6, 15, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.s-levelcomplete .gameover-title {
+  color: var(--green);
+  text-shadow: 0 0 26px rgba(82, 255, 168, 0.55);
+  animation: clearIn 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+@keyframes clearIn {
+  from { transform: scale(1.5) translateY(-12px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.s-levelcomplete .subheading {
+  animation: fadeUp 0.45s ease 0.12s both;
+}
+
+.s-levelcomplete .result-stars {
+  animation: fadeUp 0.45s ease 0.2s both;
+}
+
+.s-levelcomplete .results {
+  animation: fadeUp 0.45s ease 0.28s both;
+}
+
+.s-levelcomplete .coin-reward-banner {
+  animation: badgePop 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) 0.4s both;
+}
+
+.s-levelcomplete .actions {
+  animation: fadeUp 0.45s ease 0.5s both;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* ————— results (game over) ————— */
 
 .record-badge {
