@@ -18,7 +18,7 @@ import { S } from '../i18n/strings';
 import type { RunSubmission } from '../net/protocol';
 import type { LevelDef } from './campaign';
 import { LevelDirector } from './level-director';
-import { SECTORS, sectorForWave } from './sectors';
+import { SECTORS, sectorForWave, sectorIndexForWave, sectorNumberForWave } from './sectors';
 import { TutorialDirector, type TutorialHooks } from './tutorial';
 import { computeStats, rollChoices } from './upgrades';
 import { WaveDirector, type Director } from './waves';
@@ -70,6 +70,7 @@ export class GameScene implements Scene, World {
   private gemStreakT = 0;
   /** runTime do último abate — usado pra seta de inimigo perdido. */
   private lastKillTime = 0;
+  private arrowSoundPlayed = false;
   private camX = 0;
   private camY = 0;
   private trauma = 0;
@@ -79,6 +80,9 @@ export class GameScene implements Scene, World {
   /** Sector-transition screen flash: 1 → 0 over ~a second. */
   private sectorFlash = 0;
   private sectorFlashColor = '#ffffff';
+  /** Timer de transição de setor após morte de boss (breather de 2s). */
+  private sectorTransitionTimer = 0;
+  private pendingSector: { sector: import('./sectors.js').SectorDef; number: number } | null = null;
 
   private readonly upgLevels = new Map<string, number>();
   private readonly waves: Director;
@@ -121,14 +125,9 @@ export class GameScene implements Scene, World {
           this.deps.music.intensity = 1;
         },
         onSector: (sector, number) => {
-          this.deps.ui.banner(`SETOR ${number} — ${sector.name}`, sector.subtitle, true);
-          this.audio.play('sector');
-          this.bg.setTheme(sector.background);
-          this.deps.music.setTheme(sector.music);
-          this.deps.music.intensity = 0.35;
-          this.sectorFlash = 1;
-          this.sectorFlashColor = sector.accent;
-          this.shake(24);
+          // Se um boss acabou de morrer e a transição está agendada, não executa agora.
+          if (this.sectorTransitionTimer > 0) return;
+          this.commitSector(sector, number);
         },
       });
     }
@@ -219,6 +218,15 @@ export class GameScene implements Scene, World {
     if (this.comboT <= 0) this.combo = 0;
     this.gemStreakT -= dt;
     if (this.gemStreakT <= 0) this.gemStreak = 0;
+
+    // Transição de setor agendada (após morte de boss no limite do setor).
+    if (this.sectorTransitionTimer > 0) {
+      this.sectorTransitionTimer -= dt;
+      if (this.sectorTransitionTimer <= 0 && this.pendingSector) {
+        this.commitSector(this.pendingSector.sector, this.pendingSector.number);
+        this.pendingSector = null;
+      }
+    }
 
     // The sim only ever sees intents; the joystick stops here.
     const mv = this.input.sample();
@@ -311,6 +319,7 @@ export class GameScene implements Scene, World {
     this.kills++;
     this.killScore += e.score;
     this.lastKillTime = this.runTime;
+    this.arrowSoundPlayed = false;
     this.combo++;
     this.comboT = BAL.combo.window;
     this.tutorialDir?.noteKill();
@@ -326,10 +335,18 @@ export class GameScene implements Scene, World {
     this.hitStop(0.4, 0.05);
     this.shake(42);
     const boss = this.waves.bossInfo?.() ?? sectorForWave(this.waves.wave).boss;
-    const music = this.deps.campaign?.level.sector.music ?? sectorForWave(this.waves.wave).music;
-    this.deps.music.setTheme(music);
-    this.deps.music.intensity = Math.min(1, this.waves.wave / 12);
     this.deps.ui.banner(boss.defeatTitle, boss.defeatSub);
+    // Se a próxima onda for um novo setor, agenda a transição com 2s de respiro.
+    const nextWave = this.waves.wave + 1;
+    if (!this.deps.campaign && sectorIndexForWave(nextWave) !== sectorIndexForWave(this.waves.wave)) {
+      this.sectorTransitionTimer = 2.0;
+      this.pendingSector = { sector: sectorForWave(nextWave), number: sectorNumberForWave(nextWave) };
+    } else {
+      // Boss normal (mesmo setor) — volta à música do setor.
+      const music = this.deps.campaign?.level.sector.music ?? sectorForWave(this.waves.wave).music;
+      this.deps.music.setTheme(music);
+      this.deps.music.intensity = Math.min(1, this.waves.wave / 12);
+    }
   }
 
   onGemCollected(value: number, collector: Player): void {
@@ -390,9 +407,22 @@ export class GameScene implements Scene, World {
     this.audio.play('record');
   }
 
+  /** Executa a transição visual de setor (banner, bg, música, flash). */
+  private commitSector(sector: import('./sectors.js').SectorDef, number: number): void {
+    this.deps.ui.banner(`SETOR ${number} — ${sector.name}`, sector.subtitle, true);
+    this.audio.play('sector');
+    this.bg.setTheme(sector.background);
+    this.deps.music.setTheme(sector.music);
+    this.deps.music.intensity = 0.35;
+    this.sectorFlash = 1;
+    this.sectorFlashColor = sector.accent;
+    this.shake(24);
+  }
+
   /**
-   * Seta sutil e piscante na borda da tela apontando pro inimigo mais próximo,
-   * ativada após 25s sem nenhum abate (inimigo "sumiu" no mapa).
+   * Seta na borda da tela apontando pro inimigo mais próximo,
+   * ativada após 25s sem nenhum abate. A cor varia com a distância:
+   * verde (muito longe) → âmbar (perto). Toca um som ao aparecer.
    */
   private renderEnemyArrow(ctx: CanvasRenderingContext2D, w: number, h: number, time: number, glow: boolean): void {
     const idleTime = this.runTime - this.lastKillTime;
@@ -400,6 +430,12 @@ export class GameScene implements Scene, World {
     if (this.state !== 'playing') return;
     const nearest = this.enemies.nearest(this.player.x, this.player.y, Infinity);
     if (!nearest) return;
+
+    // Toca o som uma vez quando a seta aparece (reseta ao matar).
+    if (!this.arrowSoundPlayed) {
+      this.arrowSoundPlayed = true;
+      this.audio.play('arrow');
+    }
 
     // Screen-space position of the enemy
     const sx = nearest.x - this.camX + w / 2;
@@ -422,9 +458,18 @@ export class GameScene implements Scene, World {
     const ax = cx + tx * k;
     const ay = cy + ty * k;
 
-    // Pulse bem sutil: alpha entre 0.15 e 0.45
-    const pulse = 0.3 + Math.sin(time * 4) * 0.15;
-    const color = '#ffc857';
+    // Distância mundo real do jogador ao inimigo (pra cor).
+    const worldDist = Math.sqrt(
+      (nearest.x - this.player.x) ** 2 + (nearest.y - this.player.y) ** 2,
+    );
+    // Cor: verde (longe, >= 1200px) → âmbar (perto, <= 300px).
+    const t = Math.max(0, Math.min(1, (worldDist - 300) / (1200 - 300)));
+    const color = lerpColor('#ffc857', '#52ffa8', t);
+
+    // Pulse mais visível: alpha entre 0.35 e 0.75
+    const pulse = 0.55 + Math.sin(time * 4) * 0.2;
+    // Seta maior que antes (1.5x)
+    const s = 1.5;
 
     ctx.save();
     ctx.translate(ax, ay);
@@ -433,14 +478,13 @@ export class GameScene implements Scene, World {
     ctx.fillStyle = color;
     if (glow) {
       ctx.shadowColor = color;
-      ctx.shadowBlur = 5;
+      ctx.shadowBlur = 8;
     }
-    // Seta pequena e discreta
     ctx.beginPath();
-    ctx.moveTo(10, 0);
-    ctx.lineTo(-6, 6);
-    ctx.lineTo(-3, 0);
-    ctx.lineTo(-6, -6);
+    ctx.moveTo(12 * s, 0);
+    ctx.lineTo(-8 * s, 8 * s);
+    ctx.lineTo(-4 * s, 0);
+    ctx.lineTo(-8 * s, -8 * s);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
@@ -619,6 +663,20 @@ export class GameScene implements Scene, World {
     this.hud.render(ctx, hv, vp, time, gfx.glow);
     this.renderEnemyArrow(ctx, w, h, time, gfx.glow);
   }
+}
+
+/** Interpola duas cores hex (#rrggbb) por um fator t [0-1]. */
+function lerpColor(a: string, b: string, t: number): string {
+  const ar = parseInt(a.slice(1, 3), 16);
+  const ag = parseInt(a.slice(3, 5), 16);
+  const ab = parseInt(a.slice(5, 7), 16);
+  const br = parseInt(b.slice(1, 3), 16);
+  const bg = parseInt(b.slice(3, 5), 16);
+  const bb = parseInt(b.slice(5, 7), 16);
+  const rr = Math.round(ar + (br - ar) * t);
+  const rg = Math.round(ag + (bg - ag) * t);
+  const rb = Math.round(ab + (bb - ab) * t);
+  return `#${rr.toString(16).padStart(2, '0')}${rg.toString(16).padStart(2, '0')}${rb.toString(16).padStart(2, '0')}`;
 }
 
 /** Ambient backdrop rendered behind the DOM menus. */

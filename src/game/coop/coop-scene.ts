@@ -15,7 +15,7 @@ import {
 import type { CoopSocket } from '../../net/ws';
 import { Hud, type HudView } from '../hud';
 import { Player } from '../player';
-import { SECTORS, sectorForWave } from '../sectors';
+import { SECTORS, sectorForWave, sectorIndexForWave, sectorNumberForWave } from '../sectors';
 import { computeStats, UPGRADE_DEFS } from '../upgrades';
 import type { UI } from '../../ui/ui';
 import { enemyColor, enemyRadius, ReplicaView } from './replica';
@@ -76,6 +76,10 @@ export class CoopScene implements Scene {
   private lastLocalHp = -1;
   /** Último tick do snapshot em que houve um abate — usado pra seta de inimigo perdido. */
   private lastKillTick = 0;
+  private arrowSoundPlayed = false;
+  /** Timer de transição de setor após bossDown (breather de 2s). */
+  private sectorTransitionTimer = 0;
+  private pendingSector: { sector: import('../sectors.js').SectorDef; number: number } | null = null;
 
   private readonly hudView: HudView = {
     hp: 0, maxHp: 1, level: 1, xp: 0, xpNeed: 1,
@@ -223,13 +227,9 @@ export class CoopScene implements Scene {
           break;
         case 'sector': {
           const sector = SECTORS[(ev.n - 1) % SECTORS.length];
-          this.deps.ui.banner(`SETOR ${ev.n} — ${sector.name}`, sector.subtitle, true);
-          this.bg.setTheme(sector.background);
-          this.deps.music.setTheme(sector.music);
-          this.deps.music.intensity = 0.35;
-          this.sectorFlash = 1;
-          this.sectorFlashColor = sector.accent;
-          this.shake(24);
+          // Se um boss acabou de morrer e a transição está agendada, não executa agora.
+          if (this.sectorTransitionTimer > 0) break;
+          this.commitSector(sector, ev.n);
           break;
         }
         case 'bossWarn': {
@@ -242,13 +242,21 @@ export class CoopScene implements Scene {
         case 'bossDown': {
           const sector = sectorForWave(this.currSnap?.wave ?? 1);
           this.deps.ui.banner(sector.boss.defeatTitle, sector.boss.defeatSub);
-          this.deps.music.setTheme(sector.music);
-          this.deps.music.intensity = Math.min(1, (this.currSnap?.wave ?? 1) / 12);
           this.shake(42);
+          // Se a próxima onda for um novo setor, agenda a transição com 2s de respiro.
+          const nextWave = (this.currSnap?.wave ?? 1) + 1;
+          if (sectorIndexForWave(nextWave) !== sectorIndexForWave(this.currSnap?.wave ?? 1)) {
+            this.sectorTransitionTimer = 2.0;
+            this.pendingSector = { sector: sectorForWave(nextWave), number: sectorNumberForWave(nextWave) };
+          } else {
+            this.deps.music.setTheme(sector.music);
+            this.deps.music.intensity = Math.min(1, (this.currSnap?.wave ?? 1) / 12);
+          }
           break;
         }
         case 'kill': {
           this.lastKillTick = this.currSnap?.tick ?? 0;
+          this.arrowSoundPlayed = false;
           const debris = this.debrisFor(ev.k);
           const big = enemyRadius(ev.k) >= 18;
           this.particles.burst(debris, ev.x, ev.y, {
@@ -371,6 +379,15 @@ export class CoopScene implements Scene {
     this.camY += (target.y - this.camY) * k;
     this.trauma = Math.max(0, this.trauma - 2.4 * dt);
     this.sectorFlash = Math.max(0, this.sectorFlash - 0.9 * dt);
+
+    // Transição de setor agendada (após bossDown no limite do setor).
+    if (this.sectorTransitionTimer > 0) {
+      this.sectorTransitionTimer -= dt;
+      if (this.sectorTransitionTimer <= 0 && this.pendingSector) {
+        this.commitSector(this.pendingSector.sector, this.pendingSector.number);
+        this.pendingSector = null;
+      }
+    }
   }
 
   private angleDelta(a: number, b: number): number {
@@ -577,7 +594,22 @@ export class CoopScene implements Scene {
     ctx.globalAlpha = 1;
   }
 
-  /** Seta sutil piscante apontando pro inimigo mais próximo, ativada após 25s sem abates (co-op). */
+  /** Executa a transição visual de setor (banner, bg, música, flash). */
+  private commitSector(sector: import('../sectors.js').SectorDef, number: number): void {
+    this.deps.ui.banner(`SETOR ${number} — ${sector.name}`, sector.subtitle, true);
+    this.bg.setTheme(sector.background);
+    this.deps.music.setTheme(sector.music);
+    this.deps.music.intensity = 0.35;
+    this.sectorFlash = 1;
+    this.sectorFlashColor = sector.accent;
+    this.shake(24);
+  }
+
+  /**
+   * Seta na borda da tela apontando pro inimigo mais próximo,
+   * ativada após 25s sem abates. A cor varia com a distância:
+   * verde (muito longe) → âmbar (perto). Toca um som ao aparecer.
+   */
   private renderEnemyArrow(ctx: CanvasRenderingContext2D, w: number, h: number, snap: Snap | null, time: number, glow: boolean): void {
     if (!snap || this.local.dead) return;
     const simSeconds = snap.tick / SIM_RATE;
@@ -586,6 +618,12 @@ export class CoopScene implements Scene {
 
     const target = this.replica.nearestEnemy(this.local.x, this.local.y, Infinity);
     if (!target) return;
+
+    // Toca o som uma vez quando a seta aparece (reseta ao matar).
+    if (!this.arrowSoundPlayed) {
+      this.arrowSoundPlayed = true;
+      this.deps.audio.play('arrow');
+    }
 
     const sx = target.x - this.camX + w / 2;
     const sy = target.y - this.camY + h / 2;
@@ -603,8 +641,19 @@ export class CoopScene implements Scene {
     const ax = cx + tx * k;
     const ay = cy + ty * k;
 
-    const pulse = 0.3 + Math.sin(time * 4) * 0.15;
-    const color = '#ffc857';
+    // Distância mundo real do jogador ao inimigo (pra cor).
+    const worldDist = Math.sqrt(
+      (target.x - this.local.x) ** 2 + (target.y - this.local.y) ** 2,
+    );
+    // Cor: verde (longe, >= 1200px) → âmbar (perto, <= 300px).
+    const t = Math.max(0, Math.min(1, (worldDist - 300) / (1200 - 300)));
+    const color = lerpColor('#ffc857', '#52ffa8', t);
+
+    // Pulse mais visível: alpha entre 0.35 e 0.75
+    const pulse = 0.55 + Math.sin(time * 4) * 0.2;
+    // Seta maior (1.5x)
+    const s = 1.5;
+
     ctx.save();
     ctx.translate(ax, ay);
     ctx.rotate(ang);
@@ -612,18 +661,32 @@ export class CoopScene implements Scene {
     ctx.fillStyle = color;
     if (glow) {
       ctx.shadowColor = color;
-      ctx.shadowBlur = 5;
+      ctx.shadowBlur = 8;
     }
     ctx.beginPath();
-    ctx.moveTo(10, 0);
-    ctx.lineTo(-6, 6);
-    ctx.lineTo(-3, 0);
-    ctx.lineTo(-6, -6);
+    ctx.moveTo(12 * s, 0);
+    ctx.lineTo(-8 * s, 8 * s);
+    ctx.lineTo(-4 * s, 0);
+    ctx.lineTo(-8 * s, -8 * s);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
     ctx.globalAlpha = 1;
   }
+}
+
+/** Interpola duas cores hex (#rrggbb) por um fator t [0-1]. */
+function lerpColor(a: string, b: string, t: number): string {
+  const ar = parseInt(a.slice(1, 3), 16);
+  const ag = parseInt(a.slice(3, 5), 16);
+  const ab = parseInt(a.slice(5, 7), 16);
+  const br = parseInt(b.slice(1, 3), 16);
+  const bg = parseInt(b.slice(3, 5), 16);
+  const bb = parseInt(b.slice(5, 7), 16);
+  const rr = Math.round(ar + (br - ar) * t);
+  const rg = Math.round(ag + (bg - ag) * t);
+  const rb = Math.round(ab + (bb - ab) * t);
+  return `#${rr.toString(16).padStart(2, '0')}${rg.toString(16).padStart(2, '0')}${rb.toString(16).padStart(2, '0')}`;
 }
 
 export type { PlayerSnap };

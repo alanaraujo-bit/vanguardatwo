@@ -70,3 +70,23 @@ alter table runs add column if not exists party_size int not null default 1;
 -- Campaign progress: highest level unlocked (1-based), synced like the rest
 -- of the cloud save.
 alter table saves add column if not exists campaign_level int not null default 1;
+
+-- Real-money coin purchases (Mercado Pago Pix). One row per checkout
+-- attempt; coins are credited exactly once, when the webhook confirms
+-- payment (credited_at guards re-delivery — see api/shop/webhook.ts).
+create table if not exists purchases (
+  id             uuid primary key default gen_random_uuid(),
+  player_id      uuid not null references players(id) on delete cascade,
+  pack_id        text not null,
+  coins          int not null,
+  amount_cents   int not null,
+  mp_payment_id  text unique,
+  status         text not null default 'pending', -- pending | approved | rejected | expired
+  qr_code        text,
+  qr_code_base64 text,
+  expires_at     timestamptz,
+  created_at     timestamptz not null default now(),
+  credited_at    timestamptz
+);
+
+create index if not exists purchases_player_idx on purchases (player_id, created_at desc);

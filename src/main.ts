@@ -11,6 +11,7 @@ import { S } from './i18n/strings';
 import { api } from './net/api';
 import type { RoomPlayer, ServerMsg } from './net/realtime';
 import { session } from './net/session';
+import { storeSync } from './net/store-sync';
 import { sync } from './net/sync';
 import { CoopSocket } from './net/ws';
 import { UI, type UiActions } from './ui/ui';
@@ -33,6 +34,7 @@ const save = new SaveSystem();
 save.load();
 session.init(save);
 sync.init(save);
+storeSync.init(save);
 
 const audio = new AudioEngine();
 const music = new Music(audio);

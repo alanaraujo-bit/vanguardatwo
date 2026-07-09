@@ -110,6 +110,25 @@ export interface NameRequest {
   name: string;
 }
 
+export interface CheckoutRequest {
+  packId: string;
+}
+
+export interface CheckoutResponse {
+  purchaseId: string;
+  qrCodeBase64: string;
+  copyPaste: string;
+  expiresAt: string;
+}
+
+export type PurchaseStatus = 'pending' | 'approved' | 'rejected' | 'expired';
+
+export interface PurchaseStatusResponse {
+  status: PurchaseStatus;
+  /** Present once approved — the client must adopt this before any further save push (see storeSync). */
+  save?: CloudSave;
+}
+
 export interface ApiErrorBody {
   error: string;
   suggestion?: string;

@@ -3,7 +3,8 @@ export type SfxName =
   | 'level' | 'pick' | 'nova' | 'blade' | 'shotE' | 'wave' | 'warn' | 'bossDie'
   | 'tap' | 'confirm' | 'deny' | 'buy' | 'over' | 'record'
   | 'spit' | 'lunge' | 'burst' | 'summon' | 'sector'
-  | 'zap' | 'mine' | 'lattice';
+  | 'zap' | 'mine' | 'lattice'
+  | 'arrow';
 
 interface ToneOptions {
   f0: number;
@@ -296,6 +297,11 @@ export class AudioEngine {
         // Glassy fourier chirp: the Archive drawing a firing grid.
         this.tone({ f0: 392, f1: 784, type: 'triangle', dur: 0.12, vol: 0.06 });
         this.tone({ f0: 587, f1: 1174, type: 'triangle', dur: 0.12, vol: 0.045, when: this.ctx.currentTime + 0.025 });
+        break;
+      case 'arrow':
+        // Sutil ping de localização — duas notas curtas e frias.
+        this.tone({ f0: 880, f1: 660, type: 'sine', dur: 0.12, vol: 0.06 });
+        this.tone({ f0: 1108, f1: 880, type: 'sine', dur: 0.10, vol: 0.045, when: this.ctx.currentTime + 0.13 });
         break;
     }
   }
