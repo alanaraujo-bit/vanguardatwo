@@ -1,5 +1,6 @@
 import { SPECS, type EnemyKind } from '../game/enemies';
 import type { PickupKind } from '../game/pickups';
+import type { RoomConfig } from '../game/room-config';
 
 /**
  * Wire contract for the realtime co-op protocol, shared verbatim between the
@@ -12,7 +13,7 @@ import type { PickupKind } from '../game/pickups';
  * allocation-free; discrete happenings travel as SimEvents inside the snap.
  */
 
-export const PROTO_VER = 1;
+export const PROTO_VER = 2;
 /** Server simulation rate (fixed-step ticks per second). */
 export const SIM_RATE = 30;
 export const SIM_DT = 1 / SIM_RATE;
@@ -51,8 +52,11 @@ export const STRIDE = {
 export type ClientMsg =
   /** First message on the socket. `token` from /api/realtime-token; absent = guest. */
   | { t: 'hello'; ver: number; name: string; token?: string; meta?: Record<string, number> }
-  | { t: 'create' }
+  /** `cfg` present = custom room (Sala Personalizada); absent = classic co-op. */
+  | { t: 'create'; cfg?: RoomConfig }
   | { t: 'join'; code: string }
+  /** Host only, lobby only, custom rooms only: replace the room rules. */
+  | { t: 'cfg'; cfg: RoomConfig }
   | { t: 'ready'; ready: boolean }
   /** Host only; starts the match for the whole room. */
   | { t: 'start' }
@@ -82,8 +86,10 @@ export type ServerErr =
 
 export type ServerMsg =
   | { t: 'welcome'; slot: number; guest: boolean }
-  | { t: 'room'; code: string; hostSlot: number; players: RoomPlayer[] }
-  | { t: 'start'; tick: number; seed: number }
+  /** `cfg` present ⇔ custom room — the joiner sees the rules before readying. */
+  | { t: 'room'; code: string; hostSlot: number; players: RoomPlayer[]; cfg?: RoomConfig }
+  /** `sectorId` is the opening sector the sim actually rolled/was configured. */
+  | { t: 'start'; tick: number; seed: number; sectorId: string; cfg?: RoomConfig }
   | { t: 'snap'; s: Snap }
   /** Level-up choices for one player; deadline enforced server-side (auto-pick). */
   | { t: 'offer'; offerId: number; slot: number; choices: string[]; deadlineTick: number }

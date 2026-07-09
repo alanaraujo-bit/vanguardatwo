@@ -1582,6 +1582,54 @@ html, body {
 .coop-tags { display: flex; gap: 6px; }
 .chip.small { font-size: 10px; padding: 3px 8px; }
 .chip.ready { color: #52ffa8; border-color: rgba(82, 255, 168, 0.4); }
+.chip.warn { color: var(--amber); border-color: rgba(255, 200, 87, 0.4); }
+
+/* ————— sala personalizada ————— */
+.s-customroom {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+.cfg-list { width: min(560px, 100%); }
+.cfg-section {
+  margin: 16px 2px 2px;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: #52ffa8;
+  text-shadow: 0 0 12px rgba(82, 255, 168, 0.35);
+}
+.cfg-hint { padding: 0 2px; }
+.ban-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.ban-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px 7px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(143, 163, 200, 0.28);
+  background: rgba(20, 28, 52, 0.55);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s, opacity 0.15s, background 0.15s;
+}
+.ban-chip canvas { width: 20px; height: 20px; }
+.ban-chip.banned {
+  border-color: rgba(255, 93, 115, 0.7);
+  background: rgba(255, 46, 90, 0.12);
+  color: var(--dim);
+}
+.ban-chip.banned .ban-chip-name { text-decoration: line-through; }
+.ban-chip.banned canvas { opacity: 0.35; filter: grayscale(1); }
+.ban-count { margin-top: 6px; }
+.no-rewards-note { color: var(--amber); }
+.rules-panel { width: min(340px, 100%); margin-top: 12px; padding: 12px 14px; text-align: left; }
+.rules-head { align-items: center; margin-bottom: 6px; }
+.rules-line { margin: 2px 0; }
+.rules-edit { margin-top: 10px; }
 
 /* level-up co-op: folha inferior que NÃO pausa nem cobre o jogo */
 .s-levelupcoop {

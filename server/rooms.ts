@@ -1,3 +1,4 @@
+import type { RoomConfig } from '../src/game/room-config';
 import { ROOM_CODE_ALPHABET, ROOM_CODE_LEN } from '../src/net/realtime';
 import { Room } from './room';
 
@@ -19,7 +20,7 @@ export class Rooms {
     return this.byCode.size;
   }
 
-  create(): Room {
+  create(cfg: RoomConfig | null = null): Room {
     let code: string;
     do {
       code = '';
@@ -27,7 +28,7 @@ export class Rooms {
         code += ROOM_CODE_ALPHABET[Math.floor(Math.random() * ROOM_CODE_ALPHABET.length)];
       }
     } while (this.byCode.has(code));
-    const room = new Room(code, (r) => this.byCode.delete(r.code));
+    const room = new Room(code, (r) => this.byCode.delete(r.code), cfg);
     this.byCode.set(code, room);
     return room;
   }

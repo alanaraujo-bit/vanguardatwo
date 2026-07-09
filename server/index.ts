@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { normalizeRoomCode, parseMsg, PROTO_VER, type ClientMsg } from '../src/net/realtime';
 import { verifyRealtimeToken } from './auth';
-import { send, type Client } from './room';
+import { clampRoomConfigStrict, send, type Client } from './room';
 import { Rooms } from './rooms';
 
 /**
@@ -128,8 +128,17 @@ async function handleMessage(client: Session, raw: string): Promise<void> {
   switch (msg.t) {
     case 'create': {
       if (client.room) client.room.leave(client);
-      const room = rooms.create();
+      const room = rooms.create(msg.cfg !== undefined ? clampRoomConfigStrict(msg.cfg) : null);
       room.join(client);
+      break;
+    }
+    case 'cfg': {
+      if (!client.room) {
+        send(client, { t: 'err', code: 'not_in_room' });
+        return;
+      }
+      const result = client.room.setConfig(client, msg.cfg);
+      if (result !== 'ok') send(client, { t: 'err', code: result });
       break;
     }
     case 'join': {

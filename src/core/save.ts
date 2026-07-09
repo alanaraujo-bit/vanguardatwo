@@ -1,5 +1,6 @@
 export type GraphicsPreset = 'low' | 'medium' | 'high' | 'ultra' | 'custom';
 export type BackgroundQuality = 'off' | 'low' | 'full';
+import { type RoomPreset } from '../game/room-config.js';
 /** 0 = sem limite. */
 export type FpsCap = 0 | 30 | 60;
 /**
@@ -143,6 +144,8 @@ export interface SaveData {
   bossesKilled: string[];
   /** Unlocked achievement IDs e quando foram destravados (timestamp ms). */
   achievements: Record<string, number>;
+  /** Sala Personalizada config presets. */
+  roomPresets: RoomPreset[];
 }
 
 const GUEST_KEY = 'vanguarda.save.v1';
@@ -177,6 +180,7 @@ function defaults(): SaveData {
     totalGems: 0,
     bossesKilled: [],
     achievements: {},
+    roomPresets: [],
   };
 }
 
@@ -217,6 +221,7 @@ function parse(raw: string): SaveData {
     achievements: (parsed.achievements && typeof parsed.achievements === 'object' && !Array.isArray(parsed.achievements))
       ? { ...(parsed.achievements as Record<string, number>) }
       : {},
+    roomPresets: Array.isArray(parsed.roomPresets) ? parsed.roomPresets : [],
     settings: { ...base.settings, ...(parsed.settings ?? {}), graphics, joystickAnchor },
   };
   // v1 → v2: veterans never see the forced onboarding flow.

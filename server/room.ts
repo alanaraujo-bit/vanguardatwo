@@ -1,6 +1,9 @@
 import type { WebSocket } from 'ws';
 import { BAL } from '../src/game/balance';
-import { CoopSim, statsForMeta } from '../src/game/sim';
+import { applyRoomConfigToTuning, clampRoomConfig, type RoomConfig } from '../src/game/room-config';
+import { SECTORS } from '../src/game/sectors';
+import { CoopSim, statsForMeta, type CoopTuning } from '../src/game/sim';
+import { UPGRADE_DEFS, type Stats } from '../src/game/upgrades';
 import {
   MAX_PLAYERS, SIM_RATE, SNAP_RATE,
   type EndResult, type RoomPlayer, type ServerMsg,
@@ -36,6 +39,16 @@ export function send(client: Client, msg: ServerMsg): void {
   }
 }
 
+const ROOM_ID_LISTS = {
+  sectorIds: SECTORS.map((s) => s.id),
+  upgradeIds: UPGRADE_DEFS.map((u) => u.id),
+};
+
+/** Full clamp against the real sector/upgrade id lists (never trust the client). */
+export function clampRoomConfigStrict(raw: unknown): RoomConfig {
+  return clampRoomConfig(raw, ROOM_ID_LISTS);
+}
+
 export class Room {
   state: 'lobby' | 'playing' | 'ended' = 'lobby';
   readonly createdAt = Date.now();
@@ -47,7 +60,16 @@ export class Room {
   private nextTickAt = 0;
   private startedAt = 0;
 
-  constructor(readonly code: string, private readonly onDestroy: (room: Room) => void) {}
+  constructor(
+    readonly code: string,
+    private readonly onDestroy: (room: Room) => void,
+    /** Non-null = custom room (Sala Personalizada); rules already clamped. */
+    private cfg: RoomConfig | null = null,
+  ) {}
+
+  get isCustom(): boolean {
+    return this.cfg !== null;
+  }
 
   get playerCount(): number {
     return this.slots.filter((s) => s !== null).length;
@@ -94,6 +116,15 @@ export class Room {
     this.broadcastRoom();
   }
 
+  /** Host replaces the rules of a custom room while still in the lobby. */
+  setConfig(client: Client, raw: unknown): 'ok' | 'not_host' | 'bad_msg' {
+    if (this.state !== 'lobby' || this.cfg === null) return 'bad_msg';
+    if (client.slot !== this.hostSlot) return 'not_host';
+    this.cfg = clampRoomConfigStrict(raw);
+    this.broadcastRoom();
+    return 'ok';
+  }
+
   start(client: Client): 'ok' | 'not_host' | 'bad_msg' {
     if (this.state !== 'lobby') return 'bad_msg';
     if (client.slot !== this.hostSlot) return 'not_host';
@@ -108,15 +139,37 @@ export class Room {
     });
     for (let i = present.length; i < MAX_PLAYERS; i++) this.slots[i] = null;
 
+    const cfg = this.cfg;
+    const base: Partial<CoopTuning> = present.length >= 2 ? BAL.coop : {};
+    // Player-side multipliers wrap statsFor so every in-run recompute
+    // (upgrade picks included) keeps the room rules applied.
+    const scale = cfg
+      ? (s: Stats): Stats => ({ ...s, maxHp: Math.round(s.maxHp * cfg.playerHpMul), damage: s.damage * cfg.playerDmgMul })
+      : (s: Stats): Stats => s;
     const metaFns = present.map((c) => statsForMeta(c.meta));
     this.sim = new CoopSim({
       playerCount: present.length,
-      statsFor: (slot, lv) => metaFns[slot](slot, lv),
-      tuning: present.length >= 2 ? BAL.coop : {},
+      statsFor: (slot, lv) => scale(metaFns[slot](slot, lv)),
+      tuning: cfg ? applyRoomConfigToTuning(base, cfg) : base,
+      waves: cfg
+        ? {
+            sectorLen: cfg.wavesPerSector,
+            bossEvery: cfg.bossEvery,
+            progression: cfg.progression,
+            startSectorId: cfg.startSector === 'random' ? undefined : cfg.startSector,
+          }
+        : undefined,
+      bannedUpgrades: cfg?.bannedUpgrades,
     });
     this.state = 'playing';
     this.startedAt = Date.now();
-    this.broadcast({ t: 'start', tick: 0, seed: Math.floor(Math.random() * 0xffffffff) });
+    this.broadcast({
+      t: 'start',
+      tick: 0,
+      seed: Math.floor(Math.random() * 0xffffffff),
+      sectorId: this.sim.currentSectorId,
+      cfg: cfg ?? undefined,
+    });
     this.nextTickAt = Date.now() + TICK_MS;
     this.timer = setTimeout(this.loop, TICK_MS);
     return 'ok';
@@ -191,6 +244,22 @@ export class Room {
     this.timer = null;
 
     const simResults = sim.results();
+
+    // Custom rooms never touch the economy: no coin credit, no DB row, no
+    // leaderboard trail — a friend can dial enemy HP to the floor and farm
+    // nothing (permanent Hangar upgrades still applied to stats, unaffected).
+    if (this.isCustom) {
+      const results: EndResult[] = simResults.map((r) => ({
+        ...r,
+        coinsEarned: 0,
+        name: this.slots[r.slot]?.name ?? '—',
+        newCoinTotal: null,
+      }));
+      this.broadcast({ t: 'end', results });
+      setTimeout(() => this.destroy(), LINGER_MS);
+      return;
+    }
+
     const roster = this.slots
       .filter((c): c is Client => c !== null)
       .map((c) => ({ slot: c.slot, playerId: c.playerId }));
@@ -228,7 +297,7 @@ export class Room {
     for (const c of this.slots) {
       if (c) players.push({ slot: c.slot, name: c.name, ready: this.readyFlags[c.slot], connected: true });
     }
-    this.broadcast({ t: 'room', code: this.code, hostSlot: this.hostSlot, players });
+    this.broadcast({ t: 'room', code: this.code, hostSlot: this.hostSlot, players, cfg: this.cfg ?? undefined });
   }
 
   private broadcast(msg: ServerMsg): void {

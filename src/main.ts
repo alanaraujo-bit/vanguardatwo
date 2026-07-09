@@ -7,6 +7,7 @@ import { AudioEngine } from './audio/audio';
 import { Music } from './audio/music';
 import { CAMPAIGN } from './game/campaign';
 import { CoopScene } from './game/coop/coop-scene';
+import { DEFAULT_ROOM_CONFIG, type RoomConfig } from './game/room-config';
 import { GameScene, MenuScene } from './game/scene';
 import { S } from './i18n/strings';
 import { api } from './net/api';
@@ -96,7 +97,10 @@ function applySettings(): void {
 
 let coopSocket: CoopSocket | null = null;
 let coopScene: CoopScene | null = null;
-let coopRoom: { code: string; players: RoomPlayer[]; hostSlot: number; localSlot: number } | null = null;
+let coopRoom: { code: string; players: RoomPlayer[]; hostSlot: number; localSlot: number; cfg: RoomConfig | null } | null = null;
+/** Last rules used on the custom-room screen — re-opening keeps them (session only). */
+let customCfg: RoomConfig = { ...DEFAULT_ROOM_CONFIG, bannedUpgrades: [] };
+const cloneCfg = (cfg: RoomConfig): RoomConfig => ({ ...cfg, bannedUpgrades: [...cfg.bannedUpgrades] });
 /** Last 'err' message from the server before a close — lets onClose show a specific reason. */
 let lastCoopErr: string | null = null;
 
@@ -171,12 +175,26 @@ function coopRenderLobby(): void {
   const room = coopRoom;
   if (!room) return;
   const me = room.players.find((p) => p.slot === room.localSlot);
+  const isHost = room.localSlot === room.hostSlot;
   ui.showCoopLobby({
     code: room.code,
     players: room.players,
     hostSlot: room.hostSlot,
     localSlot: room.localSlot,
     ready: me?.ready ?? false,
+    cfg: room.cfg,
+    onEditRules: room.cfg && isHost
+      ? () => ui.showCustomRoomConfig({
+          cfg: cloneCfg(room.cfg!),
+          submitLabel: S.customApplyRules,
+          onSubmit: (cfg) => {
+            customCfg = cloneCfg(cfg);
+            coopSocket?.send({ t: 'cfg', cfg });
+            coopRenderLobby();
+          },
+          onBack: () => coopRenderLobby(),
+        })
+      : undefined,
     onReady: (ready) => coopSocket?.send({ t: 'ready', ready }),
     onStart: () => coopSocket?.send({ t: 'start' }),
     onLeave: () => {
@@ -189,17 +207,18 @@ function coopRenderLobby(): void {
 function coopPrematchMsg(msg: ServerMsg): void {
   switch (msg.t) {
     case 'welcome':
-      coopRoom = { code: '', players: [], hostSlot: 0, localSlot: msg.slot };
+      coopRoom = { code: '', players: [], hostSlot: 0, localSlot: msg.slot, cfg: null };
       break;
     case 'room':
       if (!coopRoom) return;
       coopRoom.code = msg.code;
       coopRoom.players = msg.players;
       coopRoom.hostSlot = msg.hostSlot;
+      coopRoom.cfg = msg.cfg ?? null;
       coopRenderLobby();
       break;
     case 'start':
-      coopStartMatch();
+      coopStartMatch(msg.sectorId, msg.cfg ?? null);
       break;
     case 'err':
       lastCoopErr = msg.code;
@@ -207,6 +226,7 @@ function coopPrematchMsg(msg: ServerMsg): void {
       if (msg.code === 'room_not_found') ui.coopStatus(S.coopRoomNotFound);
       else if (msg.code === 'room_full') ui.coopStatus(S.coopRoomFull);
       else if (msg.code === 'bad_token') ui.coopStatus(S.coopAuthFailed);
+      else if (msg.code === 'version') ui.coopStatus(S.coopVersionMismatch);
       else ui.coopStatus(S.netError);
       break;
     default:
@@ -214,7 +234,7 @@ function coopPrematchMsg(msg: ServerMsg): void {
   }
 }
 
-function coopStartMatch(): void {
+function coopStartMatch(sectorId: string, cfg: RoomConfig | null): void {
   const room = coopRoom;
   const sock = coopSocket;
   if (!room || !sock) return;
@@ -226,16 +246,18 @@ function coopStartMatch(): void {
     socket: sock,
     localSlot: room.localSlot,
     names,
+    startSectorId: sectorId,
+    cfg: cfg ?? undefined,
     onEnd: (results) => {
       const mine = results.find((r) => r.slot === room.localSlot);
-      if (mine) {
+      if (mine && cfg === null) {
         // Server-credited totals land in F5; until then guests and logged-in
-        // pilots both credit their share locally.
+        // pilots both credit their share locally. Custom rooms pay nothing.
         if (mine.newCoinTotal !== null) save.data.coins = mine.newCoinTotal;
         else save.data.coins += mine.coinsEarned;
         save.persist();
       }
-      ui.showCoopGameOver(results, room.localSlot, () => coopBackToMenu());
+      ui.showCoopGameOver(results, room.localSlot, () => coopBackToMenu(), cfg !== null);
     },
     onDisconnect: () => coopBackToMenu(S.coopDisconnected),
   });
@@ -292,6 +314,20 @@ const actions: UiActions = {
   },
   startCoop() {
     ui.showCoopMenu(coopMenuOpts);
+  },
+  startCustomRoom() {
+    ui.showCustomRoomConfig({
+      cfg: cloneCfg(customCfg),
+      submitLabel: S.customCreate,
+      onSubmit: (cfg) => {
+        customCfg = cloneCfg(cfg);
+        void coopConnect((sock) => sock.send({ t: 'create', cfg }));
+      },
+      onBack: () => {
+        coopCleanup();
+        ui.showModeSelect();
+      },
+    });
   },
   startCampaign(levelIndex: number) {
     coopCleanup();

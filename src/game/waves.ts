@@ -1,6 +1,7 @@
 import { BAL } from './balance';
 import type { EnemyKind } from './enemies';
-import { SECTOR_LEN, sectorForWave, sectorIndexForWave, sectorNumberForWave, rollRandomSector, type PoolEntry, type SectorDef } from './sectors';
+import { SECTORS, SECTOR_LEN, sectorForWave, sectorIndexForWave, sectorNumberForWave, rollRandomSector, type PoolEntry, type SectorDef } from './sectors';
+import type { ProgressionMode } from './room-config';
 import type { World } from './world';
 
 export interface WaveEvents {
@@ -48,6 +49,14 @@ export interface WaveBudget {
   maxAliveMul?: number;
   /** Multiplies the per-interval spawn batch size. */
   batchMul?: number;
+  /** Waves per sector (custom rooms). Default SECTOR_LEN. */
+  sectorLen?: number;
+  /** Boss encounter every N waves; 0 disables bosses. Default BAL.wave.bossEvery. */
+  bossEvery?: number;
+  /** How the next sector is chosen at each boundary. Default 'random'. */
+  progression?: ProgressionMode;
+  /** Fixed opening sector id; absent or unknown = random roll. */
+  startSectorId?: string;
 }
 
 export class WaveDirector implements Director {
@@ -70,15 +79,25 @@ export class WaveDirector implements Director {
   private spawned = 0;
   private readonly maxAliveMul: number;
   private readonly batchMul: number;
-  
+  private readonly sectorLen: number;
+  private readonly bossEvery: number;
+  private readonly progression: ProgressionMode;
+  /** SECTORS index of the opening sector — anchors 'ordered' progression. */
+  private readonly startIdx: number;
+
   private _currentSector: SectorDef;
   private _sectorCount = 1;
 
   constructor(private readonly events: WaveEvents, budget: WaveBudget = {}) {
     this.maxAliveMul = budget.maxAliveMul ?? 1;
     this.batchMul = budget.batchMul ?? 1;
+    this.sectorLen = budget.sectorLen ?? SECTOR_LEN;
+    this.bossEvery = budget.bossEvery ?? BAL.wave.bossEvery;
+    this.progression = budget.progression ?? 'random';
     this.quota = BAL.wave.quota(this.wave);
-    this._currentSector = rollRandomSector();
+    const fixed = budget.startSectorId !== undefined ? SECTORS.find((s) => s.id === budget.startSectorId) : undefined;
+    this._currentSector = fixed ?? rollRandomSector();
+    this.startIdx = SECTORS.indexOf(this._currentSector);
   }
 
   currentSector(): SectorDef {
@@ -142,12 +161,12 @@ export class WaveDirector implements Director {
     this.quota = BAL.wave.quota(this.wave);
     // Short breather before the next wave's enemies start trickling in.
     this.spawnT = 1.5;
-    if (sectorIndexForWave(this.wave) !== sectorIndexForWave(prev)) {
-      this._currentSector = rollRandomSector(this._currentSector.id);
+    if (this.progression !== 'single' && this.sectorIdx(this.wave) !== this.sectorIdx(prev)) {
+      this._currentSector = this.nextSector();
       this._sectorCount++;
       // The sector banner owns the moment; the wave banner would fight it.
       this.events.onSector(this._currentSector, this._sectorCount);
-    } else if (this.wave % BAL.wave.bossEvery === 0) {
+    } else if (this.bossEvery > 0 && this.wave % this.bossEvery === 0) {
       this.bossPending = true;
       this.bossWarnT = 1.7;
       this.events.onBossWarn(this._currentSector);
@@ -163,9 +182,23 @@ export class WaveDirector implements Director {
     this.spawned++;
   }
 
+  /** Sector ordinal for a wave under this room's sector length. */
+  private sectorIdx(wave: number): number {
+    return Math.floor((wave - 1) / this.sectorLen);
+  }
+
+  private nextSector(): SectorDef {
+    if (this.progression === 'ordered') {
+      return SECTORS[(this.startIdx + this._sectorCount) % SECTORS.length];
+    }
+    return rollRandomSector(this._currentSector.id);
+  }
+
   private rollKind(): EnemyKind {
     const sector = this._currentSector;
-    const rel = this.wave - sectorIndexForWave(this.wave) * SECTOR_LEN;
+    // Sector-relative wave, cycling on repeat visits (and in 'single' mode):
+    // every pass through a sector ramps fodder → specialists again.
+    const rel = this.wave - this.sectorIdx(this.wave) * this.sectorLen;
     const available = sector.composition.filter((c) => rel >= c.from);
     // Fodder slowly gives way to specialists as the sector progresses.
     const weightOf = (c: PoolEntry) =>

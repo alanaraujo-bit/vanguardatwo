@@ -6,7 +6,7 @@ import { Pickups } from './pickups';
 import { Player } from './player';
 import { EnemyShots, PlayerShots } from './projectiles';
 import { computeStats, rollChoices, UPGRADE_DEFS, type Stats } from './upgrades';
-import { WaveDirector } from './waves';
+import { WaveDirector, type WaveBudget } from './waves';
 import { Nova, Orbitals } from './weapons';
 import type { AudioSink, FloaterSink, ParticleSink, World } from './world';
 import type { SfxName } from '../audio/audio';
@@ -29,6 +29,10 @@ export interface CoopTuning {
   batchMul: number;
   /** Revive HP fraction at the start of the next wave. */
   reviveHpFrac: number;
+  /** Whether the dead come back at wave boundaries (custom rooms can disable). */
+  reviveEnabled: boolean;
+  /** XP multiplier on collected gems (custom rooms). */
+  xpMul: number;
   /** Max seconds a level-up offer stays open (then auto-picks first choice). */
   levelupInvuln: number;
 }
@@ -40,6 +44,8 @@ export const NEUTRAL_TUNING: CoopTuning = {
   maxAliveMul: 1,
   batchMul: 1,
   reviveHpFrac: 0.5,
+  reviveEnabled: true,
+  xpMul: 1,
   levelupInvuln: 6,
 };
 
@@ -65,6 +71,10 @@ export interface CoopSimOpts {
   /** Resolves a player's full stats from their meta + in-run upgrade levels. */
   statsFor: (slot: number, lv: (id: string) => number) => Stats;
   tuning?: Partial<CoopTuning>;
+  /** Custom-room wave rules (sector length/progression, boss cadence, opening sector). */
+  waves?: Pick<WaveBudget, 'sectorLen' | 'bossEvery' | 'progression' | 'startSectorId'>;
+  /** Upgrade ids removed from level-up offers (custom rooms). */
+  bannedUpgrades?: readonly string[];
 }
 
 /** Fallback statsFor for players with no meta (guests, tests). */
@@ -124,6 +134,7 @@ export class CoopSim implements World {
   private readonly newOffers: SimOffer[] = [];
   private readonly ev: SimEvent[] = [];
   private nextOfferId = 1;
+  private readonly banned: ReadonlySet<string>;
   private readonly waves: WaveDirector;
 
   /** One weapon set per player: levels come from that player's stats. */
@@ -133,6 +144,7 @@ export class CoopSim implements World {
   constructor(opts: CoopSimOpts) {
     this.tuning = { ...NEUTRAL_TUNING, ...opts.tuning };
     this.statsFor = opts.statsFor;
+    this.banned = new Set(opts.bannedUpgrades ?? []);
     this.enemies = new CoopEnemies(this.tuning);
     this.floaters = {
       spawn: (x, y, text) => {
@@ -181,7 +193,7 @@ export class CoopSim implements World {
         this.push({ e: 'sector', id: sector.id, n: number });
         this.pushSfx('sector');
       },
-    }, { maxAliveMul: this.tuning.maxAliveMul, batchMul: this.tuning.batchMul });
+    }, { maxAliveMul: this.tuning.maxAliveMul, batchMul: this.tuning.batchMul, ...opts.waves });
 
     // Welcome party, same as the solo opener: action from second zero.
     for (let i = 0; i < 5; i++) {
@@ -266,7 +278,7 @@ export class CoopSim implements World {
 
   private openOffer(p: Player): void {
     p.pendingLevels--;
-    const choices = rollChoices(this.lvFor(p.slot));
+    const choices = rollChoices(this.lvFor(p.slot), 3, this.banned);
     if (choices.length === 0) {
       // Everything maxed — convert the level into survivability.
       p.heal(p.stats.maxHp * 0.3, this);
@@ -304,6 +316,7 @@ export class CoopSim implements World {
   }
 
   private reviveDead(): void {
+    if (!this.tuning.reviveEnabled) return;
     for (const p of this.players) {
       if (!p.dead) continue;
       const anchor = this.nearestPlayer(p.x, p.y);
@@ -429,7 +442,7 @@ export class CoopSim implements World {
     this.gemStreakT[slot] = 0.9;
     this.pushSfx('gem', Math.pow(2, Math.min(this.gemStreak[slot], 12) * 0.08));
     const mult = 1 + Math.min(this.combo[slot], BAL.combo.maxStack) * BAL.combo.xpPerStack;
-    collector.addXp(value * mult);
+    collector.addXp(value * mult * this.tuning.xpMul);
     this.push({ e: 'gem', slot });
   }
 

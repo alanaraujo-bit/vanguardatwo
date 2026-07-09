@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { db } from '../_lib/db.js';
+import { sendDiscordNotification } from '../_lib/discord.js';
 import { queryParam, sendError } from '../_lib/http.js';
 import { fetchPayment, verifyWebhookSignature } from '../_lib/mercadopago.js';
 
@@ -62,9 +63,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // lands on "processed" (status_detail "accredited") for a completed Pix,
     // NOT "approved" like the classic Payments API. Accepting both in case
     // that varies by payment method.
-    const status = payment.status === 'approved' || payment.status === 'processed'
+    const rawMpStatus = payment.status;
+    const status = rawMpStatus === 'approved' || rawMpStatus === 'processed'
       ? 'approved'
-      : payment.status === 'cancelled' || payment.status === 'rejected'
+      : rawMpStatus === 'cancelled' || rawMpStatus === 'rejected'
         ? 'rejected'
         : null;
     if (!status) {
@@ -81,18 +83,54 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         const credited = await client.query(
           `update purchases set status = 'approved', mp_payment_id = $2, credited_at = now()
            where id = $1 and credited_at is null
-           returning coins, player_id`,
+           returning coins, player_id, pack_id, amount_cents`,
           [purchaseId, dataId],
         );
         if (credited.rows.length > 0) {
-          const { coins, player_id } = credited.rows[0] as { coins: number; player_id: string };
-          await client.query('update saves set coins = coins + $2 where player_id = $1', [player_id, coins]);
+          const row = credited.rows[0] as { coins: number; player_id: string; pack_id: string; amount_cents: number };
+          await client.query('update saves set coins = coins + $2 where player_id = $1', [row.player_id, row.coins]);
+
+          // Dispara notificação no Discord (fire-and-forget — não bloqueia o webhook)
+          const player = await client.query(
+            'select display_name, handle from players where id = $1',
+            [row.player_id],
+          );
+          if (player.rows.length > 0) {
+            sendDiscordNotification({
+              type: 'approved',
+              playerName: (player.rows[0] as { display_name: string; handle: string }).display_name,
+              handle: (player.rows[0] as { display_name: string; handle: string }).handle,
+              packId: row.pack_id,
+              amountCents: row.amount_cents,
+              coins: row.coins,
+              purchaseId: purchaseId ?? '',
+            }).catch((err) => console.error('discord notification failed', err));
+          }
         }
       } else {
-        await client.query(
-          `update purchases set status = $2 where id = $1 and credited_at is null`,
+        const updated = await client.query(
+          `update purchases set status = $2 where id = $1 and credited_at is null
+           returning coins, player_id, pack_id, amount_cents`,
           [purchaseId, status],
         );
+        if (updated.rows.length > 0) {
+          const row = updated.rows[0] as { coins: number; player_id: string; pack_id: string; amount_cents: number };
+          const player = await client.query(
+            'select display_name, handle from players where id = $1',
+            [row.player_id],
+          );
+          if (player.rows.length > 0) {
+            sendDiscordNotification({
+              type: rawMpStatus === 'cancelled' ? 'expired' : 'rejected',
+              playerName: (player.rows[0] as { display_name: string; handle: string }).display_name,
+              handle: (player.rows[0] as { display_name: string; handle: string }).handle,
+              packId: row.pack_id,
+              amountCents: row.amount_cents,
+              coins: row.coins,
+              purchaseId: purchaseId ?? '',
+            }).catch((err) => console.error('discord notification failed', err));
+          }
+        }
       }
       await client.query('commit');
     } catch (e) {

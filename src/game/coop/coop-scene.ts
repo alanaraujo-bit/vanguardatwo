@@ -16,7 +16,8 @@ import {
 import type { CoopSocket } from '../../net/ws';
 import { Hud, type HudView } from '../hud';
 import { Player } from '../player';
-import { SECTORS, sectorForWave, sectorIndexForWave, sectorNumberForWave } from '../sectors';
+import type { RoomConfig } from '../room-config';
+import { SECTORS, SECTOR_LEN } from '../sectors';
 import { computeStats, UPGRADE_DEFS } from '../upgrades';
 import type { UI } from '../../ui/ui';
 import { enemyColor, enemyRadius, ReplicaView } from './replica';
@@ -31,6 +32,10 @@ export interface CoopSceneDeps {
   localSlot: number;
   /** Display names by slot. */
   names: string[];
+  /** Opening sector the server actually rolled/was configured (from 'start'). */
+  startSectorId: string;
+  /** Present = custom room (Sala Personalizada) rules for this match. */
+  cfg?: RoomConfig;
   /** Match finished (server verdict) — caller swaps to the results screen. */
   onEnd(results: EndResult[]): void;
   /** Socket dropped mid-match — caller returns to the menu. */
@@ -110,8 +115,9 @@ export class CoopScene implements Scene {
     acquireWakeLock();
     this.deps.music.setMode('game');
     this.deps.music.intensity = 0;
-    this.deps.music.setTheme(SECTORS[0].music);
-    this.bg.setTheme(SECTORS[0].background);
+    const opening = SECTORS.find((s) => s.id === this.deps.startSectorId) ?? SECTORS[0];
+    this.deps.music.setTheme(opening.music);
+    this.bg.setTheme(opening.background);
     this.deps.ui.banner('ONDA 1');
     // Hidden tabs freeze rAF; this keeps the intent stream (and the socket)
     // alive so the server never sees a phantom idle player.
@@ -253,7 +259,8 @@ export class CoopScene implements Scene {
           this.shake(42);
           // Se a próxima onda for um novo setor, agenda a transição com 3s de respiro.
           const nextWave = (this.currSnap?.wave ?? 1) + 1;
-          if (sectorIndexForWave(nextWave) !== sectorIndexForWave(this.currSnap?.wave ?? 1)) {
+          if (this.deps.cfg?.progression !== 'single'
+            && this.sectorIdx(nextWave) !== this.sectorIdx(this.currSnap?.wave ?? 1)) {
             this.sectorTransitionTimer = 3.0;
             // Mostra uma notificação contextual em vez de apenas esperar
             setTimeout(() => {
@@ -399,6 +406,12 @@ export class CoopScene implements Scene {
         this.pendingSector = null;
       }
     }
+  }
+
+  /** Sector ordinal for a wave under this room's rules (mirrors WaveDirector). */
+  private sectorIdx(wave: number): number {
+    const len = this.deps.cfg?.wavesPerSector ?? SECTOR_LEN;
+    return Math.floor((wave - 1) / len);
   }
 
   private angleDelta(a: number, b: number): number {

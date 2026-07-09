@@ -19,7 +19,7 @@ export interface Queryable {
  * to CloudSave without a matching update here.
  */
 export const SAVE_COLS =
-  'coins, meta, best_wave, best_score, best_time, best_coins, runs, total_kills, total_time, tutorial_done, settings, campaign_level, campaign_stars, skin, owned_skins, joystick_skin, owned_joystick_skins, total_gems, bosses_killed, achievements';
+  'coins, meta, best_wave, best_score, best_time, best_coins, runs, total_kills, total_time, tutorial_done, settings, campaign_level, campaign_stars, skin, owned_skins, joystick_skin, owned_joystick_skins, total_gems, bosses_killed, achievements, custom_room_presets';
 
 /**
  * Shared pg pool, reused across invocations of a warm serverless instance.
@@ -61,6 +61,7 @@ export interface SaveRow {
   total_gems: string | number;
   bosses_killed: string[];
   achievements: Record<string, number>;
+  custom_room_presets: any[];
 }
 
 /** pg returns bigint columns as strings — normalize into the wire shape. */
@@ -89,6 +90,7 @@ export function cloudSaveFromRow(row: SaveRow): CloudSave {
     totalGems: Number(row.total_gems ?? 0),
     bossesKilled: row.bosses_killed ?? [],
     achievements: row.achievements ?? {},
+    roomPresets: row.custom_room_presets ?? [],
   };
 }
 
@@ -99,7 +101,7 @@ export async function writeCloudSave(q: Queryable, playerId: string, save: Cloud
        best_coins = $7, runs = $8, total_kills = $9, total_time = $10,
        tutorial_done = $11, settings = $12, campaign_level = $13, campaign_stars = $14,
        skin = $15, owned_skins = $16, joystick_skin = $17, owned_joystick_skins = $18,
-       total_gems = $19, bosses_killed = $20, achievements = $21, updated_at = now()
+       total_gems = $19, bosses_killed = $20, achievements = $21, custom_room_presets = $22, updated_at = now()
      where player_id = $1`,
     [
       playerId, save.coins, JSON.stringify(save.meta), save.bestWave, save.bestScore,
@@ -107,7 +109,7 @@ export async function writeCloudSave(q: Queryable, playerId: string, save: Cloud
       save.tutorialDone, save.settings ? JSON.stringify(save.settings) : null, save.campaignLevel,
       JSON.stringify(save.campaignStars), save.skin, JSON.stringify(save.ownedSkins),
       save.joystickSkin, JSON.stringify(save.ownedJoystickSkins),
-      save.totalGems, JSON.stringify(save.bossesKilled), JSON.stringify(save.achievements),
+      save.totalGems, JSON.stringify(save.bossesKilled), JSON.stringify(save.achievements), JSON.stringify(save.roomPresets),
     ],
   );
 }

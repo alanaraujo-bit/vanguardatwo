@@ -113,8 +113,8 @@ export function computeStats(save: SaveData, level: (id: string) => number): Sta
 }
 
 /** Weighted sample (without replacement) of upgrades that are not maxed out. */
-export function rollChoices(level: (id: string) => number, count = 3): UpgradeDef[] {
-  const pool = UPGRADE_DEFS.filter((u) => level(u.id) < u.max);
+export function rollChoices(level: (id: string) => number, count = 3, banned?: ReadonlySet<string>): UpgradeDef[] {
+  const pool = UPGRADE_DEFS.filter((u) => level(u.id) < u.max && !banned?.has(u.id));
   const picks: UpgradeDef[] = [];
   while (picks.length < count && pool.length > 0) {
     const total = pool.reduce((sum, u) => sum + u.weight, 0);

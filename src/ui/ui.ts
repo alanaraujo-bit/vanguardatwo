@@ -12,7 +12,13 @@ import { SHIP_SHAPE } from '../game/player';
 import { SKINS, skinById } from '../game/skins';
 import { JOYSTICK_SKINS } from '../game/joystick-skins';
 import { formatBRL, STORE_PACKS, type StorePackDef } from '../game/store';
-import { paintIcon, type UpgradeDef } from '../game/upgrades';
+import {
+  DEFAULT_ROOM_CONFIG, MAX_BANNED_UPGRADES, ROOM_MULS,
+  BOSS_EVERY_OPTIONS, REVIVE_HP_OPTIONS, WAVES_PER_SECTOR_OPTIONS,
+  type ProgressionMode, type RoomConfig,
+} from '../game/room-config';
+import { SECTORS } from '../game/sectors';
+import { paintIcon, UPGRADE_DEFS, type UpgradeDef } from '../game/upgrades';
 import { drawSprite, shapeSprite } from '../fx/sprites';
 import { api, ApiError } from '../net/api';
 import { nameError, sanitizeName, NAME_MAX } from '../net/names';
@@ -46,6 +52,7 @@ export interface UiActions {
   startRun(): void;
   startTutorial(): void;
   startCoop(): void;
+  startCustomRoom(): void;
   startCampaign(levelIndex: number): void;
   pauseRun(): void;
   resumeRun(): void;
@@ -66,9 +73,21 @@ export interface CoopLobbyView {
   hostSlot: number;
   localSlot: number;
   ready: boolean;
+  /** Present = custom room: the lobby shows the rules to everyone. */
+  cfg?: RoomConfig | null;
+  /** Host only (custom rooms): reopen the rules screen. */
+  onEditRules?: () => void;
   onReady(ready: boolean): void;
   onStart(): void;
   onLeave(): void;
+}
+
+export interface CustomRoomConfigOpts {
+  /** Working copy — mutated in place by the rows, submitted on confirm. */
+  cfg: RoomConfig;
+  submitLabel: string;
+  onSubmit(cfg: RoomConfig): void;
+  onBack(): void;
 }
 
 interface NamePromptOpts {
@@ -326,6 +345,13 @@ export class UI {
         title: S.modeCampaignTitle,
         desc: S.modeCampaignDesc,
         onSelect: () => this.showCampaignSelect(),
+      },
+      {
+        icon: this.shipIcon(44, ['#52ffa8', '#35f0ff']),
+        accent: '#52ffa8',
+        title: S.customTitle,
+        desc: S.customDesc,
+        onSelect: () => this.actions.startCustomRoom(),
       },
     ];
 
@@ -1311,6 +1337,76 @@ export class UI {
     return row;
   }
 
+  // ————— transient-state row variants (custom room rules) —————
+  // Same look as toggleRow/sliderRow/segmentRow, but they mutate a plain
+  // object and never touch save.persist()/applySettings().
+
+  private cfgToggleRow(
+    label: string, get: () => boolean, set: (v: boolean) => void, onChanged?: () => void,
+  ): HTMLElement {
+    const row = el('div', 'panel toggle-row');
+    row.appendChild(el('span', 'grow item-name', label));
+    const toggle = el('button', `toggle${get() ? ' on' : ''}`);
+    toggle.setAttribute('role', 'switch');
+    toggle.appendChild(el('span', 'knob'));
+    toggle.addEventListener('click', () => {
+      set(!get());
+      toggle.classList.toggle('on', get());
+      this.audio.play('tap');
+      onChanged?.();
+    });
+    row.appendChild(toggle);
+    return row;
+  }
+
+  private cfgSliderRow(
+    label: string, get: () => number, set: (v: number) => void,
+    opts: { min: number; max: number; step: number; format: (v: number) => string },
+  ): HTMLElement {
+    const row = el('div', 'panel slider-row');
+    const head = el('div', 'slider-row-head');
+    head.appendChild(el('span', 'item-name', label));
+    const value = el('span', 'slider-row-value', opts.format(get()));
+    head.appendChild(value);
+    row.appendChild(head);
+
+    const input = el('input', 'slider');
+    input.type = 'range';
+    input.min = String(opts.min);
+    input.max = String(opts.max);
+    input.step = String(opts.step);
+    input.value = String(get());
+    input.addEventListener('input', () => {
+      const v = Number(input.value);
+      set(v);
+      value.textContent = opts.format(v);
+    });
+    input.addEventListener('change', () => this.audio.play('tap'));
+    row.appendChild(input);
+    return row;
+  }
+
+  private cfgSegmentRow<T>(
+    label: string, options: ReadonlyArray<[T, string]>, get: () => T, set: (v: T) => void,
+  ): HTMLElement {
+    const row = el('div', 'panel segment-row');
+    row.appendChild(el('span', 'item-name', label));
+    const tabs = el('div', 'row codex-tabs segment-tabs');
+    for (const [id, text] of options) {
+      const b = el('button', `tab${get() === id ? ' active' : ''}`, text);
+      b.addEventListener('pointerdown', () => this.audio.play('tap'));
+      b.addEventListener('click', () => {
+        if (get() === id) return;
+        set(id);
+        for (const other of Array.from(tabs.children)) other.classList.remove('active');
+        b.classList.add('active');
+      });
+      tabs.appendChild(b);
+    }
+    row.appendChild(tabs);
+    return row;
+  }
+
   /** Pill-tab row for a small fixed set of options (preset, background quality, FPS cap). */
   private segmentRow<T>(
     label: string, options: ReadonlyArray<[T, string]>, get: () => T, set: (v: T) => void,
@@ -1510,11 +1606,150 @@ export class UI {
     this.open('coopmenu');
   }
 
-  /** Update the status line on the co-op menu (connecting / errors). */
+  /** Update the status line on the co-op menu / custom-room screen (connecting / errors). */
   coopStatus(text: string): void {
-    const s = this.screens.get('coopmenu');
-    const status = s?.querySelector('.coop-status');
-    if (status) status.textContent = text;
+    for (const name of ['coopmenu', 'customroom']) {
+      const status = this.screens.get(name)?.querySelector('.coop-status');
+      if (status) status.textContent = text;
+    }
+  }
+
+  // ————— sala personalizada: tela de regras —————
+
+  showCustomRoomConfig(opts: CustomRoomConfigOpts): void {
+    this.hideAll();
+    const s = this.screen('customroom');
+
+    const header = el('div', 'row header');
+    header.appendChild(this.btn(`‹ ${S.back}`, 'ghost small', opts.onBack));
+    s.appendChild(header);
+
+    s.appendChild(el('h2', 'heading glow', S.customConfigTitle));
+    s.appendChild(el('div', 'subheading', S.customConfigSub));
+
+    const cfg = opts.cfg;
+    const list = el('div', 'col list cfg-list');
+    const section = (label: string): void => {
+      list.appendChild(el('div', 'cfg-section', label));
+    };
+    const mulRow = (
+      label: string,
+      key: 'enemyHpMul' | 'enemyDmgMul' | 'spawnMul' | 'playerHpMul' | 'playerDmgMul' | 'xpMul',
+    ): HTMLElement => this.cfgSliderRow(label, () => cfg[key], (v) => { cfg[key] = v; }, {
+      ...ROOM_MULS[key],
+      format: (v) => `×${v}`,
+    });
+
+    section(S.customSectionSector);
+    const sectorOptions: ReadonlyArray<[string, string]> = [
+      ['random', S.customRandom],
+      ...SECTORS.map((sec): [string, string] => [sec.id, sec.name]),
+    ];
+    list.appendChild(this.cfgSegmentRow(S.customStartSector, sectorOptions,
+      () => cfg.startSector, (v) => { cfg.startSector = v; }));
+    list.appendChild(this.cfgSegmentRow<ProgressionMode>(S.customProgression, [
+      ['random', S.customProgressionRandom],
+      ['ordered', S.customProgressionOrdered],
+      ['single', S.customProgressionSingle],
+    ], () => cfg.progression, (v) => { cfg.progression = v; }));
+    list.appendChild(this.cfgSegmentRow(S.customWavesPerSector,
+      WAVES_PER_SECTOR_OPTIONS.map((n): [number, string] => [n, String(n)]),
+      () => cfg.wavesPerSector, (v) => { cfg.wavesPerSector = v; }));
+    list.appendChild(this.cfgSegmentRow(S.customBossEvery,
+      BOSS_EVERY_OPTIONS.map((n): [number, string] => [n, n === 0 ? S.customBossNever : `${n} ${S.customWavesSuffix}`]),
+      () => cfg.bossEvery, (v) => { cfg.bossEvery = v; }));
+
+    section(S.customSectionEnemies);
+    list.appendChild(mulRow(S.customEnemyHp, 'enemyHpMul'));
+    list.appendChild(mulRow(S.customEnemyDmg, 'enemyDmgMul'));
+    list.appendChild(mulRow(S.customSpawn, 'spawnMul'));
+
+    section(S.customSectionPilots);
+    list.appendChild(mulRow(S.customPlayerHp, 'playerHpMul'));
+    list.appendChild(mulRow(S.customPlayerDmg, 'playerDmgMul'));
+    list.appendChild(mulRow(S.customXp, 'xpMul'));
+    list.appendChild(this.cfgToggleRow(S.customRevive, () => cfg.reviveEnabled, (v) => { cfg.reviveEnabled = v; },
+      // Rebuild: the revive-HP row only exists while revive is on.
+      () => this.showCustomRoomConfig(opts)));
+    if (cfg.reviveEnabled) {
+      list.appendChild(this.cfgSegmentRow(S.customReviveHp,
+        REVIVE_HP_OPTIONS.map((f): [number, string] => [f, `${Math.round(f * 100)}%`]),
+        () => cfg.reviveHpFrac, (v) => { cfg.reviveHpFrac = v; }));
+    }
+
+    section(S.customSectionBans);
+    list.appendChild(el('div', 'item-desc cfg-hint', S.customBansHint));
+    const count = el('div', 'subheading ban-count');
+    const refreshCount = (): void => {
+      count.textContent = `${S.customBansCount}: ${cfg.bannedUpgrades.length}/${MAX_BANNED_UPGRADES}`;
+    };
+    refreshCount();
+    const grid = el('div', 'ban-grid');
+    for (const def of UPGRADE_DEFS) {
+      const chip = el('button', 'ban-chip');
+      chip.style.setProperty('--accent', def.color);
+      chip.appendChild(paintIcon(def.icon, def.color, 22));
+      chip.appendChild(el('span', 'ban-chip-name', def.name));
+      const sync = (): void => {
+        chip.classList.toggle('banned', cfg.bannedUpgrades.includes(def.id));
+      };
+      sync();
+      chip.addEventListener('click', () => {
+        const i = cfg.bannedUpgrades.indexOf(def.id);
+        if (i >= 0) cfg.bannedUpgrades.splice(i, 1);
+        else if (cfg.bannedUpgrades.length < MAX_BANNED_UPGRADES) cfg.bannedUpgrades.push(def.id);
+        this.audio.play('tap');
+        sync();
+        refreshCount();
+      });
+      grid.appendChild(chip);
+    }
+    list.appendChild(grid);
+    list.appendChild(count);
+    s.appendChild(list);
+
+    s.appendChild(el('div', 'subheading no-rewards-note', S.customNoRewards));
+    const col = el('div', 'col actions');
+    col.appendChild(this.btn(opts.submitLabel, 'primary big', () => {
+      this.audio.play('confirm');
+      opts.onSubmit(cfg);
+    }));
+    s.appendChild(col);
+    s.appendChild(el('div', 'subheading coop-status'));
+    s.appendChild(el('div', 'spacer'));
+    this.open('customroom');
+  }
+
+  /** Human-readable lines for every rule that differs from classic co-op. */
+  private customRulesLines(cfg: RoomConfig): string[] {
+    const d = DEFAULT_ROOM_CONFIG;
+    const lines: string[] = [];
+    if (cfg.startSector !== d.startSector) {
+      lines.push(`${S.customStartSector}: ${SECTORS.find((sec) => sec.id === cfg.startSector)?.name ?? cfg.startSector}`);
+    }
+    if (cfg.progression !== d.progression) {
+      lines.push(`${S.customProgression}: ${cfg.progression === 'ordered' ? S.customProgressionOrdered : S.customProgressionSingle}`);
+    }
+    if (cfg.wavesPerSector !== d.wavesPerSector) lines.push(`${S.customWavesPerSector}: ${cfg.wavesPerSector}`);
+    if (cfg.bossEvery !== d.bossEvery) {
+      lines.push(`${S.customBossEvery}: ${cfg.bossEvery === 0 ? S.customBossNever.toLowerCase() : `${cfg.bossEvery} ${S.customWavesSuffix}`}`);
+    }
+    const mul = (label: string, v: number, dv: number): void => {
+      if (v !== dv) lines.push(`${label}: ×${v}`);
+    };
+    mul(S.customEnemyHp, cfg.enemyHpMul, d.enemyHpMul);
+    mul(S.customEnemyDmg, cfg.enemyDmgMul, d.enemyDmgMul);
+    mul(S.customSpawn, cfg.spawnMul, d.spawnMul);
+    mul(S.customPlayerHp, cfg.playerHpMul, d.playerHpMul);
+    mul(S.customPlayerDmg, cfg.playerDmgMul, d.playerDmgMul);
+    mul(S.customXp, cfg.xpMul, d.xpMul);
+    if (!cfg.reviveEnabled) lines.push(S.customReviveOff);
+    else if (cfg.reviveHpFrac !== d.reviveHpFrac) lines.push(`${S.customReviveHp}: ${Math.round(cfg.reviveHpFrac * 100)}%`);
+    if (cfg.bannedUpgrades.length > 0) {
+      const names = cfg.bannedUpgrades.map((id) => UPGRADE_DEFS.find((u) => u.id === id)?.name ?? id);
+      lines.push(`${S.customBansCount}: ${names.join(', ')}`);
+    }
+    return lines;
   }
 
   showCoopLobby(view: CoopLobbyView): void {
@@ -1532,6 +1767,24 @@ export class UI {
     codeBox.appendChild(el('div', 'subheading', S.coopLobbyShare));
     codeBox.appendChild(el('div', 'coop-code-big', view.code));
     s.appendChild(codeBox);
+
+    if (view.cfg) {
+      const rules = el('div', 'panel rules-panel');
+      const head = el('div', 'row rules-head');
+      head.appendChild(el('span', 'grow item-name', S.customRulesPanel));
+      head.appendChild(el('span', 'chip small warn', S.customNoRewardsChip));
+      rules.appendChild(head);
+      const lines = this.customRulesLines(view.cfg);
+      if (lines.length === 0) {
+        rules.appendChild(el('div', 'item-desc rules-line', S.customDefaultRules));
+      } else {
+        for (const line of lines) rules.appendChild(el('div', 'item-desc rules-line', `· ${line}`));
+      }
+      if (view.onEditRules) {
+        rules.appendChild(this.btn(S.customEditRules, 'ghost small rules-edit', view.onEditRules));
+      }
+      s.appendChild(rules);
+    }
 
     const list = el('div', 'col list narrow coop-slots');
     for (let slot = 0; slot < 2; slot++) {
@@ -1638,7 +1891,7 @@ export class UI {
     this.close('levelupcoop');
   }
 
-  showCoopGameOver(results: EndResult[], localSlot: number, onMenu: () => void): void {
+  showCoopGameOver(results: EndResult[], localSlot: number, onMenu: () => void, noRewards = false): void {
     this.hideGameOverlay();
     this.hideLevelUpCoop();
     const s = this.screen('gameover');
@@ -1667,13 +1920,17 @@ export class UI {
     const potRow = el('div', 'row result-row');
     potRow.appendChild(el('span', 'grow item-desc', `${S.waveReached}: ${results[0]?.wave ?? 1} · ${S.timeSurvived}: ${fmtTime(results[0]?.time ?? 0)}`));
     shared.appendChild(potRow);
-    const coinsRow = el('div', 'row result-row coins-row');
-    coinsRow.appendChild(el('span', 'grow item-desc', `${S.coopPot}: ${pot} · ${S.coopYourShare}`));
-    coinsRow.appendChild(el('span', 'coin-dot'));
-    const coinsEl = el('span', 'result-value amber', '0');
-    coinsRow.appendChild(coinsEl);
-    shared.appendChild(coinsRow);
-    this.countUp(coinsEl, mine?.coinsEarned ?? 0, 1.2, '+');
+    if (noRewards) {
+      shared.appendChild(el('div', 'row result-row no-rewards-note', S.customNoRewards));
+    } else {
+      const coinsRow = el('div', 'row result-row coins-row');
+      coinsRow.appendChild(el('span', 'grow item-desc', `${S.coopPot}: ${pot} · ${S.coopYourShare}`));
+      coinsRow.appendChild(el('span', 'coin-dot'));
+      const coinsEl = el('span', 'result-value amber', '0');
+      coinsRow.appendChild(coinsEl);
+      shared.appendChild(coinsRow);
+      this.countUp(coinsEl, mine?.coinsEarned ?? 0, 1.2, '+');
+    }
     s.appendChild(shared);
 
     const col = el('div', 'col actions');

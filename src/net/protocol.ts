@@ -1,5 +1,6 @@
 import { applyPreset, type BackgroundQuality, type ControlScheme, type FpsCap, type GraphicsPreset, type GraphicsSettings, type JoystickAnchor, type SaveData, type Settings } from '../core/save.js';
 import { META_DEFS } from '../game/meta.js';
+import { type RoomPreset, clampRoomPresets } from '../game/room-config.js';
 
 /**
  * Wire types and pure merge/clamp logic shared verbatim by the browser
@@ -30,6 +31,7 @@ export interface CloudSave {
   totalGems: number;
   bossesKilled: string[];
   achievements: Record<string, number>;
+  roomPresets: RoomPreset[];
 }
 
 export interface PlayerInfo {
@@ -288,6 +290,7 @@ export function clampCloudSave(raw: Partial<CloudSave> | null | undefined): Clou
     achievements: (r.achievements && typeof r.achievements === 'object' && !Array.isArray(r.achievements))
       ? limitRecord(r.achievements as Record<string, number>, SAVE_LIMITS.achievements)
       : {},
+    roomPresets: clampRoomPresets(r.roomPresets),
   };
 }
 
@@ -324,7 +327,21 @@ export function mergeCloudSaves(a: CloudSave, b: CloudSave, coinsFrom: 'max' | '
     totalGems: Math.max(a.totalGems, b.totalGems),
     bossesKilled: [...new Set([...b.bossesKilled, ...a.bossesKilled])],
     achievements: { ...b.achievements, ...a.achievements },
+    // Newer preset updates win (by id); keep max 8
+    roomPresets: mergeRoomPresets(a.roomPresets, b.roomPresets),
   };
+}
+
+function mergeRoomPresets(a: RoomPreset[], b: RoomPreset[]): RoomPreset[] {
+  const map = new Map<string, RoomPreset>();
+  for (const p of b) map.set(p.id, p);
+  for (const p of a) {
+    const existing = map.get(p.id);
+    if (!existing || p.updatedAt >= existing.updatedAt) map.set(p.id, p);
+  }
+  return Array.from(map.values())
+    .sort((x, y) => y.updatedAt - x.updatedAt)
+    .slice(0, 8);
 }
 
 // ————— SaveData ⇄ CloudSave —————
@@ -351,6 +368,7 @@ export function cloudFromSave(d: SaveData): CloudSave {
     totalGems: d.totalGems,
     bossesKilled: [...d.bossesKilled],
     achievements: { ...d.achievements },
+    roomPresets: d.roomPresets ? [...d.roomPresets] : [],
   });
 }
 
@@ -380,4 +398,5 @@ export function applyCloudToSave(d: SaveData, c: CloudSave): void {
   d.totalGems = Math.max(d.totalGems, c.totalGems);
   d.bossesKilled = [...new Set([...c.bossesKilled, ...d.bossesKilled])];
   d.achievements = { ...c.achievements, ...d.achievements };
+  d.roomPresets = mergeRoomPresets(c.roomPresets, d.roomPresets || []);
 }

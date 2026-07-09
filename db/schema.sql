@@ -106,3 +106,6 @@ alter table saves add column if not exists achievements jsonb not null default '
 -- Joystick skins (personalização do analógico virtual).
 alter table saves add column if not exists joystick_skin text not null default 'cibernetico';
 alter table saves add column if not exists owned_joystick_skins jsonb not null default '[]';
+
+-- Custom Room / Sala Personalizada Presets
+alter table saves add column if not exists custom_room_presets jsonb not null default '[]';
