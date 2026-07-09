@@ -40,7 +40,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     return;
   }
 
-  if (type !== 'payment') {
+  if (type !== 'order') {
+    // This account's application is provisioned on the Orders API (see
+    // api/_lib/mercadopago.ts) — Mercado Pago sends `type=order` for it,
+    // not `type=payment`. Log anything unexpected instead of silently
+    // dropping it, in case that assumption ever needs revisiting.
+    if (type) console.log(`shop webhook: ignoring notification type "${type}"`);
     res.status(200).end();
     return;
   }

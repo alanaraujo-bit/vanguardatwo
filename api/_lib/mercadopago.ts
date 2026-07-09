@@ -15,19 +15,38 @@ function accessToken(): string {
 }
 
 export interface PixCharge {
+  /** Order id (e.g. "ORDTST...") — NOT a classic /v1/payments id. Webhook
+   * notifications for this account arrive keyed by this same id (type=order). */
   mpPaymentId: string;
   qrCode: string;
   qrCodeBase64: string;
   expiresAt: string;
 }
 
+interface MpOrderResponse {
+  id: string;
+  status: string;
+  status_detail?: string;
+  external_reference: string | null;
+  transactions?: {
+    payments?: Array<{
+      status: string;
+      status_detail?: string;
+      date_of_expiration?: string;
+      payment_method?: { qr_code?: string; qr_code_base64?: string };
+    }>;
+  };
+}
+
 /**
- * Creates a Pix payment via Mercado Pago's Payments API. `idempotencyKey`
- * should be the purchases.id row — a retry (e.g. a Vercel function retry)
- * reuses the same charge instead of billing twice. Notifications are NOT
- * set per-request here — the webhook URL is configured once in the Mercado
- * Pago dashboard; sending notification_url on every payment too would fire
- * the same event twice per Mercado Pago's own guidance.
+ * Creates a Pix charge via Mercado Pago's newer Orders API (`/v1/orders`).
+ * This account's application is only authorized for the Orders API — the
+ * classic `/v1/payments` endpoint returns 401 "Unauthorized use of live
+ * credentials" for it regardless of credential, confirmed by testing both
+ * production and test Access Tokens directly. `idempotencyKey` should be
+ * the purchases.id row — a retry reuses the same charge instead of billing
+ * twice. Notifications are NOT set per-request — the webhook URL is
+ * configured once in the Mercado Pago dashboard.
  */
 export async function createPixCharge(opts: {
   amountCents: number;
@@ -36,7 +55,8 @@ export async function createPixCharge(opts: {
   externalReference: string;
   idempotencyKey: string;
 }): Promise<PixCharge> {
-  const res = await fetch(`${MP_API}/v1/payments`, {
+  const amount = (Math.round(opts.amountCents) / 100).toFixed(2);
+  const res = await fetch(`${MP_API}/v1/orders`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken()}`,
@@ -44,31 +64,31 @@ export async function createPixCharge(opts: {
       'X-Idempotency-Key': opts.idempotencyKey,
     },
     body: JSON.stringify({
-      transaction_amount: Math.round(opts.amountCents) / 100,
-      description: opts.description,
-      payment_method_id: 'pix',
-      payer: { email: opts.payerEmail },
+      type: 'online',
+      total_amount: amount,
       external_reference: opts.externalReference,
+      description: opts.description,
+      payer: { email: opts.payerEmail },
+      transactions: {
+        payments: [{ amount, payment_method: { id: 'pix', type: 'bank_transfer' } }],
+      },
     }),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`mercadopago payment creation failed: ${res.status} ${body}`);
+    throw new Error(`mercadopago order creation failed: ${res.status} ${body}`);
   }
-  const json = (await res.json()) as {
-    id: number;
-    date_of_expiration?: string;
-    point_of_interaction?: { transaction_data?: { qr_code?: string; qr_code_base64?: string } };
-  };
-  const data = json.point_of_interaction?.transaction_data;
-  if (!data?.qr_code || !data.qr_code_base64) {
+  const json = (await res.json()) as MpOrderResponse;
+  const payment = json.transactions?.payments?.[0];
+  const data = payment?.payment_method;
+  if (!payment || !data?.qr_code || !data.qr_code_base64) {
     throw new Error('mercadopago response missing pix qr data');
   }
   return {
-    mpPaymentId: String(json.id),
+    mpPaymentId: json.id,
     qrCode: data.qr_code,
     qrCodeBase64: data.qr_code_base64,
-    expiresAt: json.date_of_expiration ?? new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+    expiresAt: payment.date_of_expiration ?? new Date(Date.now() + 30 * 60 * 1000).toISOString(),
   };
 }
 
@@ -78,19 +98,25 @@ export interface MpPayment {
 }
 
 /**
- * Re-fetches a payment straight from Mercado Pago — the webhook body itself
- * is never trusted for status/amount, only used to know which id to look up.
+ * Re-fetches an order straight from Mercado Pago — the webhook body itself
+ * is never trusted for status/amount, only used to know which id to look
+ * up. The order's own top-level `status` is a coarse lifecycle state
+ * ("action_required" while waiting on the Pix transfer); the nested
+ * transaction's payment status uses Mercado Pago's standard payment
+ * vocabulary ("approved" | "rejected" | "cancelled" | ...) and is what
+ * actually reflects whether the Pix landed, so that's what's returned here.
  */
-export async function fetchPayment(mpPaymentId: string): Promise<MpPayment> {
-  const res = await fetch(`${MP_API}/v1/payments/${encodeURIComponent(mpPaymentId)}`, {
+export async function fetchPayment(mpOrderId: string): Promise<MpPayment> {
+  const res = await fetch(`${MP_API}/v1/orders/${encodeURIComponent(mpOrderId)}`, {
     headers: { Authorization: `Bearer ${accessToken()}` },
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`mercadopago payment fetch failed: ${res.status} ${body}`);
+    throw new Error(`mercadopago order fetch failed: ${res.status} ${body}`);
   }
-  const json = (await res.json()) as { status: string; external_reference: string | null };
-  return { status: json.status, externalReference: json.external_reference };
+  const json = (await res.json()) as MpOrderResponse;
+  const paymentStatus = json.transactions?.payments?.[0]?.status ?? json.status;
+  return { status: paymentStatus, externalReference: json.external_reference };
 }
 
 /**
