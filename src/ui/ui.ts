@@ -496,10 +496,9 @@ export class UI {
         row.appendChild(el('span', 'maxed', S.max));
       } else {
         const cost = metaCost(def, lvl);
-        const afford = this.save.data.coins >= cost;
-        const buy = this.btn(String(cost), `buy small${afford ? '' : ' locked'}`, () => {
+        const buy = this.btn(String(cost), 'buy small', () => {
           if (this.save.data.coins < cost) {
-            this.audio.play('deny');
+            this.notEnoughCoins();
             return;
           }
           this.save.data.coins -= cost;
@@ -539,7 +538,7 @@ export class UI {
     SKINS.forEach((skin, i) => {
       const isOwned = skin.price === 0 || owned.has(skin.id);
       const isEquipped = current === skin.id;
-      const card = el('button', `card skin-card${isOwned ? '' : ' locked'}${isEquipped ? ' equipped' : ''}`);
+      const card = el('button', `card skin-card${isEquipped ? ' equipped' : ''}`);
       card.style.setProperty('--i', String(i));
       card.style.setProperty('--accent', skin.color);
 
@@ -551,6 +550,19 @@ export class UI {
       const body = el('div', 'grow');
       body.appendChild(el('div', 'item-name', skin.name));
       body.appendChild(el('div', 'item-desc', skin.desc));
+
+      const attemptBuy = (): void => {
+        if (this.save.data.coins < skin.price) {
+          this.notEnoughCoins();
+          return;
+        }
+        this.save.data.coins -= skin.price;
+        this.save.data.ownedSkins.push(skin.id);
+        this.save.data.skin = skin.id;
+        this.save.persist();
+        this.audio.play('buy');
+        this.showSkinShop();
+      };
 
       // Price or status
       if (isOwned) {
@@ -568,29 +580,18 @@ export class UI {
         }
         body.appendChild(status);
       } else {
-        const afford = this.save.data.coins >= skin.price;
-        const priceBtn = this.btn(String(skin.price), `buy small${afford ? '' : ' locked'}`, () => {
-          if (this.save.data.coins < skin.price) {
-            this.audio.play('deny');
-            return;
-          }
-          this.save.data.coins -= skin.price;
-          this.save.data.ownedSkins.push(skin.id);
-          this.save.data.skin = skin.id;
-          this.save.persist();
-          this.audio.play('buy');
-          this.showSkinShop();
-        });
+        const priceBtn = this.btn(String(skin.price), 'buy small', attemptBuy);
+        priceBtn.addEventListener('click', (e) => e.stopPropagation());
         priceBtn.prepend(el('span', 'coin-dot'));
         body.appendChild(priceBtn);
       }
       card.appendChild(body);
-      card.appendChild(el('span', 'mode-chevron', isEquipped ? '✓' : isOwned ? '' : '🔒'));
+      card.appendChild(el('span', 'mode-chevron', isEquipped ? '✓' : ''));
 
       card.addEventListener('pointerdown', () => this.audio.play('tap'));
       card.addEventListener('click', () => {
         if (!isOwned) {
-          this.audio.play('deny');
+          attemptBuy();
           return;
         }
         if (isEquipped) return;
@@ -628,7 +629,7 @@ export class UI {
     JOYSTICK_SKINS.forEach((skin, i) => {
       const isOwned = skin.price === 0 || owned.has(skin.id);
       const isEquipped = current === skin.id;
-      const card = el('button', `card skin-card${isOwned ? '' : ' locked'}${isEquipped ? ' equipped' : ''}`);
+      const card = el('button', `card skin-card${isEquipped ? ' equipped' : ''}`);
       card.style.setProperty('--i', String(i));
       card.style.setProperty('--accent', skin.accent);
 
@@ -640,6 +641,19 @@ export class UI {
       const body = el('div', 'grow');
       body.appendChild(el('div', 'item-name', skin.name));
       body.appendChild(el('div', 'item-desc', skin.desc));
+
+      const attemptBuy = (): void => {
+        if (this.save.data.coins < skin.price) {
+          this.notEnoughCoins();
+          return;
+        }
+        this.save.data.coins -= skin.price;
+        this.save.data.ownedJoystickSkins.push(skin.id);
+        this.save.data.joystickSkin = skin.id;
+        this.save.persist();
+        this.audio.play('buy');
+        this.showJoystickSkinShop();
+      };
 
       // Price or status
       if (isOwned) {
@@ -657,29 +671,18 @@ export class UI {
         }
         body.appendChild(status);
       } else {
-        const afford = this.save.data.coins >= skin.price;
-        const priceBtn = this.btn(String(skin.price), `buy small${afford ? '' : ' locked'}`, () => {
-          if (this.save.data.coins < skin.price) {
-            this.audio.play('deny');
-            return;
-          }
-          this.save.data.coins -= skin.price;
-          this.save.data.ownedJoystickSkins.push(skin.id);
-          this.save.data.joystickSkin = skin.id;
-          this.save.persist();
-          this.audio.play('buy');
-          this.showJoystickSkinShop();
-        });
+        const priceBtn = this.btn(String(skin.price), 'buy small', attemptBuy);
+        priceBtn.addEventListener('click', (e) => e.stopPropagation());
         priceBtn.prepend(el('span', 'coin-dot'));
         body.appendChild(priceBtn);
       }
       card.appendChild(body);
-      card.appendChild(el('span', 'mode-chevron', isEquipped ? '✓' : isOwned ? '' : '🔒'));
+      card.appendChild(el('span', 'mode-chevron', isEquipped ? '✓' : ''));
 
       card.addEventListener('pointerdown', () => this.audio.play('tap'));
       card.addEventListener('click', () => {
         if (!isOwned) {
-          this.audio.play('deny');
+          attemptBuy();
           return;
         }
         if (isEquipped) return;
@@ -1451,19 +1454,25 @@ export class UI {
 
   // ————— confirm dialog —————
 
-  confirm(message: string, onYes: () => void, yesLabel: string = S.resetYes): void {
+  confirm(message: string, onYes: () => void, yesLabel: string = S.resetYes, yesClass: string = 'danger'): void {
     const s = this.screen('confirm');
     const panel = el('div', 'panel dialog');
     panel.appendChild(el('p', 'dialog-text', message));
     const row = el('div', 'row gap');
     row.appendChild(this.btn(S.cancel, 'ghost small grow', () => this.close('confirm')));
-    row.appendChild(this.btn(yesLabel, 'danger small grow', () => {
+    row.appendChild(this.btn(yesLabel, `${yesClass} small grow`, () => {
       this.close('confirm');
       onYes();
     }));
     panel.appendChild(row);
     s.appendChild(panel);
     this.open('confirm');
+  }
+
+  /** Item não pôde ser comprado por falta de moedas: em vez de travar, convida o jogador a ir pra loja. */
+  private notEnoughCoins(): void {
+    this.audio.play('deny');
+    this.confirm(S.notEnoughCoinsMsg, () => this.showStore(), S.goToStore, 'primary');
   }
 
   // ————— in-game overlay —————

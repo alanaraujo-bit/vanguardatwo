@@ -296,6 +296,8 @@ export const S = {
   skinPurchaseNotice: 'Nova skin adquirida!',
   skinNotEnoughCoins: 'Moedas insuficientes.',
   skinTab: 'FUSELAGEM',
+  notEnoughCoinsMsg: 'Moedas insuficientes! Compre mais na loja pra desbloquear este item.',
+  goToStore: 'IR PARA LOJA',
 
   // ————— joystick skins —————
   joystickSkins: 'ANALÓGICOS',
