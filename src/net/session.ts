@@ -11,6 +11,16 @@ import {
 export type SessionStatus = 'guest' | 'authed';
 
 /**
+ * Best-effort local hint that this device last had a live session — separate
+ * from SaveSystem's account slot, and never cleared by resetGuestSlot(). Lets
+ * the boot sequence in main.ts tell "brand-new guest" from "returning pilot
+ * whose guest slot was wiped after their last login" before the async
+ * session.restore() round trip resolves — without it, a returning signed-in
+ * player sees the guided tutorial launch on every single boot.
+ */
+const AUTH_HINT_KEY = 'vanguarda.session.hint';
+
+/**
  * Client-side account state. The server session lives in an HttpOnly cookie;
  * this mirrors who is logged in, switches the SaveSystem between the guest
  * and per-account slots, and merges local progress into the cloud on login.
@@ -30,6 +40,24 @@ class Session {
     return this.status === 'authed' && this.player !== null;
   }
 
+  /** Synchronous readout of the auth hint — see AUTH_HINT_KEY above. */
+  hasAuthHint(): boolean {
+    try {
+      return localStorage.getItem(AUTH_HINT_KEY) === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  private setAuthHint(v: boolean): void {
+    try {
+      if (v) localStorage.setItem(AUTH_HINT_KEY, '1');
+      else localStorage.removeItem(AUTH_HINT_KEY);
+    } catch {
+      // best effort
+    }
+  }
+
   /** Subscribe to login/logout/rename events (menu refresh, sync kicks). */
   onChange(cb: () => void): void {
     this.listeners.add(cb);
@@ -42,6 +70,7 @@ class Session {
       this.adopt(res.player, res.save);
     } catch {
       // no session / offline — stay guest, cookie (if any) gets retried next boot
+      this.setAuthHint(false);
     }
   }
 
@@ -70,6 +99,7 @@ class Session {
     window.google?.accounts.id.disableAutoSelect();
     this.player = null;
     this.status = 'guest';
+    this.setAuthHint(false);
     this.save?.switchToGuest();
     this.notify();
   }
@@ -108,6 +138,7 @@ class Session {
     }
     this.player = player;
     this.status = 'authed';
+    this.setAuthHint(true);
     this.notify();
   }
 

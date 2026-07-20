@@ -95,6 +95,7 @@ export const S = {
   hudEditDone: 'CONCLUÍDO',
   hudResetPosition: 'Restaurar posição padrão',
   hudCustomBadge: 'Personalizado',
+  nameSettings: 'NOME',
 
   // ————— tutorial guiado —————
   tutSkip: 'PULAR TUTORIAL',

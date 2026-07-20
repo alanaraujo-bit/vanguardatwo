@@ -384,7 +384,7 @@ const ui = new UI(save, audio, actions, vp);
 applySettings();
 music.setMode('menu');
 game.setScene(menuScene);
-if (save.data.onboarded) {
+if (save.data.onboarded || session.hasAuthHint()) {
   ui.showMenu();
 } else {
   actions.startTutorial();

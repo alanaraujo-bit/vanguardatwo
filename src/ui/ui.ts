@@ -1027,6 +1027,9 @@ export class UI {
     s.appendChild(el('h2', 'heading', S.settings));
 
     const list = el('div', 'col list');
+    list.appendChild(this.settingsCategoryRow(
+      S.nameSettings, this.save.data.name || S.namePlaceholder, () => this.editName(() => this.showSettings()),
+    ));
     list.appendChild(this.settingsCategoryRow(S.audioSettings, S.audioSettingsDesc, () => this.showAudioSettings()));
     list.appendChild(this.settingsCategoryRow(S.graphicsSettings, S.graphicsSettingsDesc, () => this.showGraphicsSettings()));
     list.appendChild(this.settingsCategoryRow(S.controlsSettings, S.controlsSettingsDesc, () => this.showControlsSettings()));
@@ -2440,7 +2443,7 @@ export class UI {
 
     if (own && session.authed) {
       const col = el('div', 'col profile-actions');
-      col.appendChild(this.btn(S.editName, 'ghost', () => this.editOwnName()));
+      col.appendChild(this.btn(S.editName, 'ghost', () => this.editName(() => this.showProfile())));
       col.appendChild(this.btn(S.logoutBtn, 'danger', () => {
         this.confirm(S.logoutConfirm, () => {
           void session.logout().then(() => this.showMenu());
@@ -2473,15 +2476,21 @@ export class UI {
     this.audio.play('buy');
   }
 
-  private editOwnName(): void {
+  /** Shared name-edit flow for both authenticated (server rename) and guest (local-only) pilots. */
+  private editName(returnTo: () => void): void {
     this.showNamePrompt({
       initial: session.player?.name ?? this.save.data.name,
-      onCancel: () => this.showProfile(),
+      onCancel: returnTo,
       onDone: async (name) => {
         try {
-          await session.rename(name);
+          if (session.authed) {
+            await session.rename(name);
+          } else {
+            this.save.data.name = name;
+            this.save.persist();
+          }
           this.audio.play('confirm');
-          this.showProfile();
+          returnTo();
           return null;
         } catch (e) {
           if (e instanceof ApiError && e.status === 409) {
